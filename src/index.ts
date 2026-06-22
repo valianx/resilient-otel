@@ -1,7 +1,7 @@
 // Core barrel — all framework-agnostic public API
 
-// SDK init + Axiom helper
-export { init, axiomHeaders } from './core/init.js';
+// SDK init
+export { init } from './core/init.js';
 
 // Next.js instrumentation.ts register() helper (NEXT_RUNTIME-guarded init)
 export { register } from './core/register.js';

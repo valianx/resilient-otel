@@ -6,7 +6,6 @@ Exports per subpath, plus the TypeScript types.
 
 - `init(config)` — start the SDK; returns `Promise<ShutdownHandle>`
 - `register(config)` — Next.js `instrumentation.ts` helper (NEXT_RUNTIME-guarded `init`)
-- `axiomHeaders(opts?)` — runtime header thunk for direct-to-Axiom export
 - `emitLog(level, data)` — emit a log record through the OTel Logs bridge
 - `enrichWithContext(data)` — add trace + execution context to a log record
 - `createInstruments(meter?)` — build the standard metric instruments

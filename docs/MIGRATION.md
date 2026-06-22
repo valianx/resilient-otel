@@ -49,7 +49,6 @@ import { ObservabilityModule } from './observability/observability.module';
 // AFTER
 import { ObservabilityModule } from 'resilient-otel/nestjs';
 import { createScrubber } from 'resilient-otel/scrub';
-import { axiomHeaders } from 'resilient-otel';
 
 @Module({
   imports: [
@@ -58,7 +57,8 @@ import { axiomHeaders } from 'resilient-otel';
         // Optional: add project-specific PII fields
         extraDenylist: ['customer_id', 'account_ref'],
       }),
-      headers: axiomHeaders(), // reads AXIOM_TOKEN / AXIOM_DATASET at runtime
+      // For direct-to-vendor export, pass OTLP auth headers (see docs/AXIOM.md):
+      // headers: () => ({ Authorization: `Bearer ${process.env.VENDOR_TOKEN}` }),
     }),
   ],
 })
@@ -74,7 +74,7 @@ export class AppModule {}
 | `import { ExecutionContextService } from './observability/services/execution-context.service'` | `import { executionContext } from 'resilient-otel'` |
 | `import { sanitizeBody, sanitizeHeader } from './observability/utils/sanitizer.util'` | `import { createScrubber } from 'resilient-otel/scrub'` → `scrubber.scrubAttrs(body)` |
 | `import { TelemetryLifecycleService } from './observability/services/telemetry-lifecycle.service'` | `import { TelemetryLifecycleService } from 'resilient-otel/nestjs'` (wired by `forRoot`) |
-| Side-effect `import './observability/config/opentelemetry.config'` | `await init({ scrubber: createScrubber(), headers: axiomHeaders() })` before `NestFactory.create` OR use `ObservabilityModule.forRoot()` |
+| Side-effect `import './observability/config/opentelemetry.config'` | `await init({ scrubber: createScrubber() })` before `NestFactory.create` OR use `ObservabilityModule.forRoot()` |
 
 ## Step 5 — Update env vars
 

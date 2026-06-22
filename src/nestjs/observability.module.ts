@@ -28,7 +28,7 @@ const SCRUBBER_TOKEN = Symbol('RESILIENT_OTEL_SCRUBBER');
  * - Exports all services for use in feature modules
  *
  * Usage:
- *   ObservabilityModule.forRoot({ scrubber: createScrubber(), headers: axiomHeaders() })
+ *   ObservabilityModule.forRoot({ scrubber: createScrubber() })
  */
 @Global()
 @Module({})

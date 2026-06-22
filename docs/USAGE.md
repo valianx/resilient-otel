@@ -52,17 +52,21 @@ await init({
   protocol: 'grpc',
 });
 
-// Direct to Axiom — headers built at runtime from AXIOM_TOKEN / AXIOM_DATASET
-import { axiomHeaders } from 'resilient-otel';
+// Direct to a vendor (no Collector) — OTLP authenticates via headers
 await init({
   serviceName: 'svc',
   scrubber: createScrubber(),
-  endpoint: 'https://api.axiom.co',
-  headers: axiomHeaders(),
+  endpoint: 'https://otlp.vendor.example',
+  headers: () => ({ Authorization: `Bearer ${process.env.VENDOR_TOKEN}` }),
 });
 ```
 
-`axiomHeaders()` returns a thunk evaluated on each export, so rotating the token in env takes effect without a code change, and the token is never compiled into the bundle.
+For direct-to-vendor export, authentication travels as OTLP **headers** — the `headers` field accepts a record or a `() => record` thunk (evaluated on each export, so token rotation needs no code change and the token is never compiled into the bundle). Each vendor uses its own header names:
+
+- **Axiom**: `Authorization: Bearer <token>` + `X-Axiom-Dataset: <dataset>` — see [AXIOM.md](AXIOM.md)
+- **Honeycomb**: `x-honeycomb-team: <key>`
+- **Grafana Cloud**: `Authorization: Basic <base64(instanceID:token)>`
+- **Datadog**: `dd-api-key: <key>`
 
 ## Taxonomy
 

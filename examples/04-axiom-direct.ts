@@ -1,17 +1,16 @@
 /**
- * Direct-to-Axiom export (no local Collector).
+ * Direct-to-vendor export (no local Collector), using Axiom as the example.
  *
- * The endpoint is plain OTLP/HTTP; authentication is two headers built at
- * runtime by axiomHeaders() from AXIOM_TOKEN / AXIOM_DATASET — so rotating the
- * token is an env change, never a code change, and the token is never compiled
- * into the bundle.
+ * There is nothing Axiom-specific in the library: OTLP authenticates via
+ * headers, and the generic `headers` field takes a record or a thunk. The thunk
+ * reads your own env at call time, so rotating the token is an env change (never
+ * code) and the token is never compiled into the bundle. See docs/AXIOM.md.
  *
- *   export OTEL_EXPORTER_OTLP_ENDPOINT=https://api.axiom.co
- *   export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+ *   export OTEL_EXPORTER_OTLP_ENDPOINT=https://api.axiom.co  (optional; or pass endpoint)
  *   export AXIOM_TOKEN=xaat-...
  *   export AXIOM_DATASET=my-dataset
  */
-import { init, axiomHeaders } from 'resilient-otel';
+import { init } from 'resilient-otel';
 import { createScrubber } from 'resilient-otel/scrub';
 
 const handle = await init({
@@ -19,7 +18,10 @@ const handle = await init({
   scrubber: createScrubber(),
   endpoint: 'https://api.axiom.co',
   protocol: 'http/protobuf',
-  headers: axiomHeaders(), // () => ({ Authorization: 'Bearer …', 'X-Axiom-Dataset': … })
+  headers: () => ({
+    Authorization: `Bearer ${process.env.AXIOM_TOKEN}`,
+    'X-Axiom-Dataset': process.env.AXIOM_DATASET ?? '',
+  }),
 });
 
 export { handle };

@@ -8,14 +8,14 @@
 import { Module } from '@nestjs/common';
 import { ObservabilityModule } from 'resilient-otel/nestjs';
 import { createScrubber } from 'resilient-otel/scrub';
-import { axiomHeaders } from 'resilient-otel';
 
 @Module({
   imports: [
     ObservabilityModule.forRoot({
       serviceName: 'nest-service',
       scrubber: createScrubber({ extraDenylist: ['tenant_secret'] }),
-      headers: axiomHeaders(),
+      // For direct-to-vendor export, pass OTLP auth headers (see docs/AXIOM.md):
+      // headers: () => ({ Authorization: `Bearer ${process.env.VENDOR_TOKEN}` }),
     }),
   ],
 })

@@ -8,7 +8,7 @@ as a consumer would; drop them into a project that has the package installed.
 | `01-core-node.ts` | Minimal `init()` + graceful shutdown in a plain Node service |
 | `02-instrumentation.ts` | The `--import` preload entry for auto-instrumentation ordering |
 | `03-custom-redaction.ts` | `createScrubber()` with custom denylist words + a custom secret pattern |
-| `04-axiom-direct.ts` | `axiomHeaders()` runtime header builder for direct-to-Axiom export |
+| `04-axiom-direct.ts` | Direct-to-vendor export via the generic `headers` thunk (Axiom example) |
 | `05-nestjs/` | `ObservabilityModule.forRoot()` wiring in a NestJS app |
 | `06-nextjs/` | App Router proxy/BFF: `instrumentation.ts` + a Node-runtime Route Handler |
 

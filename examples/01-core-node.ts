@@ -5,14 +5,13 @@
  * (the preload enables HTTP/DB auto-instrumentation; init() below wires the
  * manual layer: scrubber, log bridge, lifecycle.)
  */
-import { init, axiomHeaders } from 'resilient-otel';
+import { init } from 'resilient-otel';
 import { createScrubber } from 'resilient-otel/scrub';
 
 async function main(): Promise<void> {
   const handle = await init({
     serviceName: 'my-service',
     scrubber: createScrubber({ extraDenylist: ['internal_account_id'] }),
-    headers: axiomHeaders(), // no-op unless AXIOM_TOKEN/AXIOM_DATASET are set
   });
 
   // Flush + shut down telemetry on termination.

@@ -17,7 +17,7 @@
 | `environment` | — | `OTEL_RESOURCE_ATTRIBUTES` | `deployment.environment` resource attribute. |
 | `endpoint` | SDK default (`localhost`) | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP endpoint (Collector or vendor). |
 | `protocol` | `'http/protobuf'` | `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` \| `grpc`. |
-| `headers` | — | — | Static record or `() => record` (runtime token rotation, e.g. `axiomHeaders()`). |
+| `headers` | — | — | OTLP auth headers for direct-to-vendor export. Static record or `() => record` (runtime token rotation). |
 | `samplingRatio` | `1.0` | `OTEL_TRACES_SAMPLER_ARG` | Trace sampling ratio, clamped to 0–1. |
 | `shutdownTimeoutMs` | `10000` | — | Graceful-shutdown timeout (ms). |
 | `instrumentations` | `[]` | — | Auto-instrumentations passed to the NodeSDK. |
@@ -42,4 +42,4 @@ These are **not** names this library invented — they are the OpenTelemetry spe
 |---|---|
 | `OTEL_SDK_DISABLED=true` | Forces a no-op, in addition to `enabled: false`. |
 | `OTEL_RESOURCE_ATTRIBUTES` | Extra resource attributes, read natively by the SDK. |
-| `AXIOM_TOKEN` / `AXIOM_DATASET` | Read by `axiomHeaders()` only, at call time (token rotation without a code change). |
+| _vendor tokens_ | The library reads none. You read your own (e.g. `process.env.VENDOR_TOKEN`) inside the `headers` thunk. See [AXIOM.md](AXIOM.md) for an Axiom example. |

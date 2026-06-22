@@ -155,23 +155,3 @@ export async function init(config: ResilientOtelConfig): Promise<ShutdownHandle>
     timeoutMs,
   );
 }
-
-/**
- * Axiom header thunk factory.
- * Returns a function that reads AXIOM_TOKEN / AXIOM_DATASET at call time,
- * so rotating the token in env vars takes effect without code changes.
- * Recipe §4 — no token compiled into the bundle.
- */
-export function axiomHeaders(opts?: {
-  token?: string;
-  dataset?: string;
-}): () => Record<string, string> {
-  return (): Record<string, string> => {
-    const token = opts?.token ?? process.env['AXIOM_TOKEN'] ?? '';
-    const dataset = opts?.dataset ?? process.env['AXIOM_DATASET'] ?? '';
-    return {
-      Authorization: `Bearer ${token}`,
-      'X-Axiom-Dataset': dataset,
-    };
-  };
-}
