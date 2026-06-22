@@ -14,7 +14,7 @@ export default defineConfig({
   clean: true,
   treeshake: true,
   minify: false,
-  target: 'es2020',
+  target: 'node22',
   outDir: 'dist',
   external: [
     '@nestjs/common',
