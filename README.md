@@ -1,4 +1,4 @@
-# resilient-otel
+# Resilient OTEL
 
 A config-first OpenTelemetry library for Node.js services: SDK init, an extensible PII/secrets scrubber, taxonomy, metrics, log bridge, plus a NestJS adapter and a Next.js helper.
 
