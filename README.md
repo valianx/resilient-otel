@@ -8,7 +8,7 @@ Works with **Node.js 22+**. Install one package, pass config, stop copying an ob
 
 - **One-call setup**: `init(config)` wires traces + logs + metrics, returns a graceful-shutdown handle
 - **Extensible scrubber**: redact your own fields and secret patterns at runtime — before anything is exported
-- **Backend-agnostic**: emits OTLP only; the sink (Axiom, Grafana, SigNoz, Elastic) is your Collector's concern
+- **Backend-agnostic**: emits OTLP only; the sink (Grafana, SigNoz, Elastic, …) is your Collector's concern
 - **Config-first**: the library reads no env vars of its own; every option is a typed field with a default
 - **NestJS adapter** and **Next.js helper** for the App Router proxy/BFF layer
 - **Tree-shakeable**, **TypeScript first**
@@ -31,13 +31,12 @@ pnpm add resilient-otel
 ## Quick Start
 
 ```typescript
-import { init, axiomHeaders } from 'resilient-otel';
+import { init } from 'resilient-otel';
 import { createScrubber } from 'resilient-otel/scrub';
 
 const handle = await init({
   serviceName: 'my-service',
   scrubber: createScrubber({ extraDenylist: ['internal_account_id'] }),
-  headers: axiomHeaders(), // optional: direct-to-Axiom header thunk
 });
 
 // flush + shut down telemetry on termination
@@ -63,12 +62,12 @@ The library is config-first and reads **no env vars of its own** — every optio
 | `OTEL_TRACES_SAMPLER_ARG` | `samplingRatio` | `1.0` |
 | `OTEL_SDK_DISABLED` | kill-switch (`true` → no-op) | `true` |
 
-Direct-to-Axiom export additionally reads `AXIOM_TOKEN` and `AXIOM_DATASET`, but only via `axiomHeaders()`, at call time. Full option contract: [docs/CONFIG.md](docs/CONFIG.md).
+Full option contract: [docs/CONFIG.md](docs/CONFIG.md).
 
 ## Documentation
 
 - [Configuration](docs/CONFIG.md) — every `init()` / `createScrubber()` option, defaults, and the standard `OTEL_*` fallbacks
-- [Usage guide](docs/USAGE.md) — full `init()`, backends (Collector vs Axiom), preload ordering, taxonomy
+- [Usage guide](docs/USAGE.md) — full `init()`, backends (Collector vs direct-to-vendor), preload ordering, taxonomy
 - [Scrubber](docs/SCRUBBER.md) — redaction, the secret-regex bank, modes, and the boot guard
 - [NestJS](docs/NESTJS.md) — `ObservabilityModule`, interceptors, middlewares, lifecycle
 - [Next.js](docs/NEXTJS.md) — `register()` for `instrumentation.ts` and the proxy/BFF Route Handler
