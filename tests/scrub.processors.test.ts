@@ -2,11 +2,11 @@
  * scrub.processors — AC-5 of PR-2:
  * Redaction happens before export (mock exporter receives redacted content).
  */
-import { describe, it, expect, mock } from 'bun:test';
+import { describe, it, expect } from './helpers/test-kit';
 import { ScrubSpanProcessor, ScrubLogRecordProcessor } from '../src/scrub/processors';
 import { createScrubber } from '../src/scrub/scrubber';
 import type { SpanProcessor, ReadableSpan, Span } from '@opentelemetry/sdk-trace-base';
-import type { LogRecordProcessor, LogRecord } from '@opentelemetry/sdk-logs';
+import type { LogRecordProcessor, SdkLogRecord } from '@opentelemetry/sdk-logs';
 import type { Context } from '@opentelemetry/api';
 
 describe('scrub.processors — redaction before export', () => {
@@ -76,10 +76,10 @@ describe('scrub.processors — redaction before export', () => {
 
   describe('ScrubLogRecordProcessor', () => {
     it('redacts sensitive log attributes before downstream onEmit', () => {
-      const capturedRecords: LogRecord[] = [];
+      const capturedRecords: SdkLogRecord[] = [];
 
       const mockDownstream: LogRecordProcessor = {
-        onEmit: (record: LogRecord, _ctx?: Context) => {
+        onEmit: (record: SdkLogRecord, _ctx?: Context) => {
           capturedRecords.push({ ...record, attributes: { ...(record.attributes ?? {}) } });
         },
         forceFlush: () => Promise.resolve(),
@@ -88,7 +88,7 @@ describe('scrub.processors — redaction before export', () => {
 
       const processor = new ScrubLogRecordProcessor(mockDownstream, scrubber);
 
-      const fakeRecord: LogRecord = {
+      const fakeRecord: SdkLogRecord = {
         body: 'User logged in with password=secret123',
         attributes: {
           user: 'alice',
@@ -98,7 +98,7 @@ describe('scrub.processors — redaction before export', () => {
         severityText: 'info',
         timestamp: Date.now(),
         observedTimestamp: Date.now(),
-      } as unknown as LogRecord;
+      } as unknown as SdkLogRecord;
 
       processor.onEmit(fakeRecord);
 

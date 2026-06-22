@@ -6,7 +6,7 @@ import type {
 import type { Context } from '@opentelemetry/api';
 import type {
   LogRecordProcessor,
-  LogRecord,
+  SdkLogRecord,
 } from '@opentelemetry/sdk-logs';
 import type { Scrubber } from '../types/index.js';
 
@@ -61,7 +61,7 @@ export class ScrubLogRecordProcessor implements LogRecordProcessor {
     private readonly scrubber: Scrubber,
   ) {}
 
-  onEmit(record: LogRecord, context?: Context): void {
+  onEmit(record: SdkLogRecord, context?: Context): void {
     // Redact attributes
     if (record.attributes) {
       const attrs = record.attributes as Record<string, unknown>;

@@ -5,7 +5,7 @@
  * so the dev-guard file-text scanner (which operates on static bytes) does not
  * flag intentionally synthetic/fake test fixtures.
  */
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect } from './helpers/test-kit';
 import { createScrubber } from '../src/scrub/scrubber';
 
 const scrubber = createScrubber({ mode: 'moderate' });
@@ -104,8 +104,8 @@ describe('scrub.secrets — one test per pattern', () => {
 
   it('rsa-private-key: redacts RSA PEM key blocks', () => {
     // PEM markers assembled at runtime to avoid static scanner hits
-    const beg = ['--', '--', 'BEGIN RSA PRIVATE KEY', '--', '--'].join('');
-    const end = ['--', '--', 'END RSA PRIVATE KEY', '--', '--'].join('');
+    const beg = ['--', '---', 'BEGIN RSA PRIVATE KEY', '---', '--'].join('');
+    const end = ['--', '---', 'END RSA PRIVATE KEY', '---', '--'].join('');
     const pem = `${beg}\nMIIEowIBAAKCAQEA...\n${end}`;
     const result = redact(`key=${pem}`);
     expect(result).not.toContain('MIIEowIBAAKCAQEA');

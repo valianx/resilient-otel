@@ -17,7 +17,6 @@ const TransportStream = require('winston-transport') as {
 
 import { context, trace } from '@opentelemetry/api';
 import { SeverityNumber } from '@opentelemetry/api-logs';
-import { setLogBridge } from '../logbridge/bridge.js';
 import type { Logger } from '@opentelemetry/api-logs';
 
 type LogRecord = import('@opentelemetry/api-logs').LogRecord;

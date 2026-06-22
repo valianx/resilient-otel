@@ -1,5 +1,7 @@
-// Brand symbol for the scrubber boot guard (R5)
-export declare const scrubberBrand: unique symbol;
+// Brand symbol for the scrubber boot guard (R5).
+// Canonical single source so the interface and the implementation reference
+// the same `unique symbol`.
+export const scrubberBrand: unique symbol = Symbol('resilient-otel.scrubber');
 
 export interface Scrubber {
   redact(text: string): string;

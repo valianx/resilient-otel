@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect } from './helpers/test-kit';
 import { createScrubber } from '../src/scrub/scrubber';
 
 const scrubber = createScrubber({ mode: 'moderate' });

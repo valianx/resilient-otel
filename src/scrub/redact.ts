@@ -40,6 +40,33 @@ export function redactSecrets(
   return result;
 }
 
+/** Escape a string for safe use inside a RegExp. */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Redact denylisted terms that appear inline in free text as `term=value`
+ * or `term: value` (e.g. a log body `"... password=secret123"`). Only the
+ * value is replaced; the key is preserved so the message stays readable.
+ */
+export function redactDenylistedInline(
+  text: string,
+  denylist: ReadonlySet<string>,
+  replacement: string,
+): string {
+  let result = text;
+  for (const term of denylist) {
+    if (!term) continue;
+    const re = new RegExp(
+      `(\\b${escapeRegExp(term)}\\b\\s*[=:]\\s*)("?)([^\\s"',;&]+)\\2`,
+      'gi',
+    );
+    result = result.replace(re, `$1${replacement}`);
+  }
+  return result;
+}
+
 /** Truncate a string to maxLength with a suffix showing how many chars were cut. */
 function truncate(value: string, maxLength: number): string {
   if (value.length <= maxLength) return value;
@@ -112,12 +139,16 @@ export function scrubAttrs<T extends Record<string, unknown>>(
   return scrubValue(null, obj, options, seen) as T;
 }
 
-/** Top-level entry: redact secrets from a single string. */
+/** Top-level entry: redact denylisted `key=value` pairs and secrets from a single string. */
 export function redactString(
   text: string,
-  options: Pick<RedactOptions, 'secretPatterns' | 'replacement'>,
+  options: Pick<RedactOptions, 'secretPatterns' | 'replacement' | 'denylist'>,
 ): string {
-  return redactSecrets(text, options.secretPatterns, options.replacement);
+  // Secret patterns first (they match structured tokens like `Bearer eyJ…`),
+  // then inline denylist `key=value` redaction — otherwise redacting the value
+  // after a denylisted key (e.g. `Authorization:`) would break the secret match.
+  const secrets = redactSecrets(text, options.secretPatterns, options.replacement);
+  return redactDenylistedInline(secrets, options.denylist, options.replacement);
 }
 
 export { DEFAULT_DENYLIST, DEFAULT_SECRET_PATTERNS, REDACTED };

@@ -2,7 +2,7 @@
  * nestjs.module — AC-3 of PR-3: peer deps meta.
  * Tests NestJS adapter code paths that do not require a live Nest container.
  */
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect } from './helpers/test-kit';
 import { TelemetryLifecycleService } from '../src/nestjs/telemetry-lifecycle.service';
 import { normalizeRoute } from '../src/utils/route';
 import { createScrubber } from '../src/scrub/scrubber';

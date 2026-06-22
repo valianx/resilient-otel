@@ -1,7 +1,7 @@
 /**
  * env — AC-7 / env contract tests.
  */
-import { describe, it, expect, afterEach } from 'bun:test';
+import { describe, it, expect, afterEach } from './helpers/test-kit';
 import { readEnvConfig } from '../src/config/env';
 import { axiomHeaders } from '../src/core/init';
 

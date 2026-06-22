@@ -2,7 +2,7 @@
  * init.bootguard — AC-1 of PR-2:
  * init() throws when enabled + no scrubber / noop scrubber (R5).
  */
-import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
+import { describe, it, expect, beforeAll, afterAll } from './helpers/test-kit';
 import { init } from '../src/core/init';
 import { noopScrubber, createScrubber } from '../src/scrub/scrubber';
 

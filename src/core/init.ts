@@ -133,7 +133,10 @@ export async function init(config: ResilientOtelConfig): Promise<ShutdownHandle>
     metricReaders: [metricReader],
     sampler: buildSampler(samplingRatio),
     textMapPropagator: buildPropagator(),
-    instrumentations: (config.instrumentations as Parameters<typeof NodeSDK>[0]['instrumentations']) ?? [],
+    instrumentations:
+      (config.instrumentations as NonNullable<
+        ConstructorParameters<typeof NodeSDK>[0]
+      >['instrumentations']) ?? [],
   });
 
   sdk.start();

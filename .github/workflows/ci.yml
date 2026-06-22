@@ -31,26 +31,5 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Test (Node.js)
-        run: npm run test:node
-        continue-on-error: true
-
-  bun:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: Install dependencies
-        run: bun install
-
-      - name: Type check
-        run: bun run typecheck
-
-      - name: Test (Bun)
-        run: bun test
-        continue-on-error: true
+      - name: Test
+        run: npm test

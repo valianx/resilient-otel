@@ -1,7 +1,7 @@
 /**
  * taxonomy — Operation × Target enum completeness + HTTP allowlist filter.
  */
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect } from './helpers/test-kit';
 import { Operation, Target, taxonomyAttrs } from '../src/taxonomy/taxonomy';
 import { makeHttpAllowlistFilter, normalizeRoute } from '../src/utils/route';
 

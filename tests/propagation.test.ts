@@ -2,7 +2,7 @@
  * propagation — AC-6 of PR-2:
  * CompositePropagator uses W3C TraceContext + W3C Baggage, no B3.
  */
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect } from './helpers/test-kit';
 import { buildPropagator } from '../src/core/propagation';
 import { W3CTraceContextPropagator, W3CBaggagePropagator } from '@opentelemetry/core';
 

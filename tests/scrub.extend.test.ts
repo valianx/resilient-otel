@@ -2,7 +2,7 @@
  * scrub.extend — AC-3 of PR-2:
  * Consumer adds custom words via config AND env, merged on built-in bank.
  */
-import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
+import { describe, it, expect, beforeAll, afterAll } from './helpers/test-kit';
 import { createScrubber } from '../src/scrub/scrubber';
 
 describe('scrub.extend — merge order: DEFAULT ∪ extraDenylist ∪ env', () => {

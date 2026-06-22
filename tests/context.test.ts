@@ -1,7 +1,7 @@
 /**
  * context — ALS run/get/update; no-op degrade when ALS absent (R4).
  */
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect } from './helpers/test-kit';
 import { executionContext } from '../src/context/execution-context';
 
 describe('context — AsyncLocalStorage execution context', () => {

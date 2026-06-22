@@ -1,12 +1,11 @@
-import { type Scrubber, type ScrubberConfig } from '../types/index.js';
+import { type Scrubber, type ScrubberConfig, scrubberBrand } from '../types/index.js';
 import { DEFAULT_DENYLIST } from './denylist.js';
 import { DEFAULT_SECRET_PATTERNS, type SecretPattern } from './secrets.js';
 import { scrubAttrs as doScrubAttrs, redactString, type RedactOptions } from './redact.js';
 import { readEnvConfig } from '../config/env.js';
 
-// The brand symbol used by the boot guard (R5).
-// Declared as a module-level const so it's the same symbol across all calls.
-export const scrubberBrand: unique symbol = Symbol('resilient-otel.scrubber');
+// Re-export the canonical brand symbol (defined in types) used by the boot guard (R5).
+export { scrubberBrand };
 
 /**
  * No-op scrubber sentinel — passed to init() intentionally when you want to

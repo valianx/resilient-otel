@@ -3,7 +3,7 @@
  * OTEL_SDK_DISABLED=true or OBSERVABILITY_ENABLED=false → no-op shutdown,
  * no exporter constructed.
  */
-import { describe, it, expect, afterEach } from 'bun:test';
+import { describe, it, expect, afterEach } from './helpers/test-kit';
 import { init } from '../src/core/init';
 import { noopScrubber } from '../src/scrub/scrubber';
 

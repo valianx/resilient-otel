@@ -12,6 +12,7 @@
  * nest-template/observability/services/execution-context.service.ts
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { ExecutionCtx, ContextType } from '../types/index.js';
 
 type ALS<T> = {
@@ -19,13 +20,11 @@ type ALS<T> = {
   getStore(): T | undefined;
 };
 
-// R4: guard for runtimes without async_hooks
+// R4: guard for runtimes without async_hooks (edge/browser). On Node/Bun the
+// builtin is always present; this only degrades to a no-op store elsewhere.
 function createALS(): ALS<ExecutionCtx> | null {
   try {
-    // Dynamic import guard — avoids bundler complaints on non-Node runtimes
-    const { AsyncLocalStorage } = require('async_hooks') as {
-      AsyncLocalStorage: new <T>() => ALS<T>;
-    };
+    if (typeof AsyncLocalStorage === 'undefined') return null;
     return new AsyncLocalStorage<ExecutionCtx>();
   } catch {
     return null;
