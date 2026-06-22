@@ -114,7 +114,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     emitLog('info', {
       msg: 'proxy_request',
-      ...taxonomyAttrs(Operation.HttpOutgoing, Target.HttpClient),
+      ...taxonomyAttrs(Operation.Request, Target.External),
       body: scrubber.scrubAttrs(body), // redact PII/secrets before it hits telemetry
     });
     try {

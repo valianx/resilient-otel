@@ -6,48 +6,35 @@ import { Operation, Target, taxonomyAttrs } from '../src/taxonomy/taxonomy';
 import { makeHttpAllowlistFilter, normalizeRoute } from '../src/utils/route';
 
 describe('taxonomy — enums and helpers', () => {
-  describe('Operation enum', () => {
-    it('covers HTTP operations', () => {
-      expect(Operation.HttpIncoming).toBe('http.incoming');
-      expect(Operation.HttpOutgoing).toBe('http.outgoing');
-    });
-
-    it('covers DB operations', () => {
-      expect(Operation.DbQuery).toBe('db.query');
-      expect(Operation.DbTransaction).toBe('db.transaction');
-    });
-
-    it('covers cache operations', () => {
-      expect(Operation.CacheGet).toBe('cache.get');
-      expect(Operation.CachePut).toBe('cache.put');
-    });
-
-    it('covers messaging operations', () => {
-      expect(Operation.MessagePublish).toBe('message.publish');
-      expect(Operation.MessageConsume).toBe('message.consume');
-    });
-
-    it('covers auth operations', () => {
-      expect(Operation.AuthLogin).toBe('auth.login');
-      expect(Operation.AuthLogout).toBe('auth.logout');
-      expect(Operation.AuthRefresh).toBe('auth.refresh');
+  describe('Operation enum (recipe §11.1 — request|response|error)', () => {
+    it('covers the three flow operations', () => {
+      expect(Operation.Request).toBe('request');
+      expect(Operation.Response).toBe('response');
+      expect(Operation.Error).toBe('error');
     });
   });
 
-  describe('Target enum', () => {
-    it('covers infrastructure targets', () => {
-      expect(Target.Postgres).toBe('postgres');
-      expect(Target.Redis).toBe('redis');
-      expect(Target.Kafka).toBe('kafka');
+  describe('Target enum (recipe §11.1 — client|external|store|internal)', () => {
+    it('covers the four interaction targets', () => {
+      expect(Target.Client).toBe('client');
+      expect(Target.External).toBe('external');
+      expect(Target.Store).toBe('store');
+      expect(Target.Internal).toBe('internal');
     });
   });
 
   describe('taxonomyAttrs()', () => {
-    it('returns app.operation and app.target attributes', () => {
-      const attrs = taxonomyAttrs(Operation.HttpIncoming, Target.HttpClient);
-      expect(attrs['app.operation']).toBe('http.incoming');
-      expect(attrs['app.target']).toBe('http.client');
+    it('returns bare operation and target attributes (recipe keys)', () => {
+      const attrs = taxonomyAttrs(Operation.Error, Target.External);
+      expect(attrs['operation']).toBe('error');
+      expect(attrs['target']).toBe('external');
       expect(attrs['signal']).toBe('log');
+    });
+
+    it('accepts custom string values for extensibility', () => {
+      const attrs = taxonomyAttrs(Operation.Request, 'cache');
+      expect(attrs['operation']).toBe('request');
+      expect(attrs['target']).toBe('cache');
     });
   });
 });
