@@ -34,7 +34,7 @@ nestjs/*     → core, scrub, context, logbridge, utils + PEER @nestjs/*, (optio
 
 ### Registry-based scrubber
 The scrubber is a registry of `{name, pattern}` rules plus a denylist Set. Merge order:
-`DEFAULT_DENYLIST ∪ extraDenylist ∪ env LOG_REDACT_EXTRA_FIELDS`
+`DEFAULT_DENYLIST ∪ extraDenylist` (config-only; the library reads no env vars).
 
 This allows runtime extensibility without replacing the entire bank.
 
@@ -42,7 +42,7 @@ This allows runtime extensibility without replacing the entire bank.
 `ScrubSpanProcessor` and `ScrubLogRecordProcessor` sit between the business code and the downstream `BatchSpanProcessor` / `BatchLogRecordProcessor`. Redaction happens on `onEnd` (spans) and `onEmit` (logs) — before any byte leaves the process.
 
 ### Boot guard (R5)
-`init()` throws when `OBSERVABILITY_ENABLED=true` and the scrubber is absent or is the `noopScrubber` sentinel. This prevents accidentally shipping PII to the collector.
+`init()` throws when enabled (the default) and the scrubber is absent or is the `noopScrubber` sentinel. This prevents accidentally shipping PII to the collector.
 
 ### SDK 2.x API (Research C2)
 - `resourceFromAttributes()` — no `schemaUrl` argument (empty schema wins merge, R1 safeguard)

@@ -17,7 +17,7 @@ import {
   PeriodicExportingMetricReader,
 } from '@opentelemetry/sdk-metrics';
 
-import { readEnvConfig } from '../config/env.js';
+import { readOtelEnv } from '../config/env.js';
 import { scrubberBrand } from '../scrub/scrubber.js';
 import { isNoopScrubber } from '../scrub/scrubber.js';
 import { ScrubSpanProcessor, ScrubLogRecordProcessor } from '../scrub/processors.js';
@@ -40,8 +40,8 @@ const NOOP_HANDLE: ShutdownHandle = {
  *   - config.scrubber is absent, OR
  *   - config.scrubber is the noopScrubber sentinel.
  *
- * Master switch: returns NOOP_HANDLE when OBSERVABILITY_ENABLED is false/unset.
- * Kill-switch: returns NOOP_HANDLE when OTEL_SDK_DISABLED=true.
+ * Master switch: returns NOOP_HANDLE when config.enabled === false (default true).
+ * Kill-switch: returns NOOP_HANDLE when the standard OTEL_SDK_DISABLED=true.
  *
  * Uses SDK 2.x APIs (Research C2):
  *   - resourceFromAttributes() — no schemaUrl → empty-schema wins merge (R1)
@@ -49,10 +49,10 @@ const NOOP_HANDLE: ShutdownHandle = {
  *   - NodeSDK({ spanProcessors: [], logRecordProcessors: [], metricReaders: [] })
  */
 export async function init(config: ResilientOtelConfig): Promise<ShutdownHandle> {
-  const envCfg = readEnvConfig(config.envPrefix ?? '');
+  const env = readOtelEnv();
 
-  // Kill-switch (standard OTEL_SDK_DISABLED) or master switch
-  if (envCfg.sdkDisabled || !envCfg.observabilityEnabled) {
+  // Master switch (code config, default on) or standard OTEL_SDK_DISABLED kill-switch
+  if (config.enabled === false || env.sdkDisabled) {
     return NOOP_HANDLE;
   }
 
@@ -70,15 +70,16 @@ export async function init(config: ResilientOtelConfig): Promise<ShutdownHandle>
     );
   }
 
-  const protocol = config.protocol ?? envCfg.otlpProtocol;
-  const endpoint = config.endpoint ?? envCfg.otlpEndpoint;
-  const timeoutMs = config.shutdownTimeoutMs ?? envCfg.shutdownTimeoutMs;
-  const samplingRatio = config.samplingRatio ?? envCfg.samplingRatio;
+  // Config wins; standard OTEL_* env fills gaps; then code defaults.
+  const protocol = config.protocol ?? env.protocol ?? 'http/protobuf';
+  const endpoint = config.endpoint ?? env.endpoint;
+  const timeoutMs = config.shutdownTimeoutMs ?? 10_000;
+  const samplingRatio = config.samplingRatio ?? env.samplingRatio ?? 1.0;
 
   // Build resource — no schemaUrl argument (empty schema wins merge, R1 safeguard)
   const resource = resourceFromAttributes({
     [ATTR_SERVICE_NAME]:
-      config.serviceName ?? envCfg.serviceName ?? 'unknown-service',
+      config.serviceName ?? env.serviceName ?? 'unknown-service',
     [ATTR_SERVICE_VERSION]: config.serviceVersion ?? '0.0.0',
     ...(config.environment
       ? { [ATTR_DEPLOYMENT_ENVIRONMENT_NAME]: config.environment }

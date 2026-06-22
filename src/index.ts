@@ -33,5 +33,5 @@ export { executionContext } from './context/index.js';
 export { normalizeRoute, makeHttpAllowlistFilter } from './utils/index.js';
 export { hashPayload, getPayloadSize } from './utils/index.js';
 
-// Environment config resolver (advanced consumers)
-export { readEnvConfig, type EnvConfig } from './config/index.js';
+// Standard OTEL_* env fallbacks (advanced consumers)
+export { readOtelEnv, type OtelEnv } from './config/index.js';

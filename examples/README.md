@@ -12,13 +12,14 @@ as a consumer would; drop them into a project that has the package installed.
 | `05-nestjs/` | `ObservabilityModule.forRoot()` wiring in a NestJS app |
 | `06-nextjs/` | App Router proxy/BFF: `instrumentation.ts` + a Node-runtime Route Handler |
 
-All examples assume:
+The library is config-first (it reads no env vars of its own); `init()` is
+enabled by default. The only env vars below are the standard OpenTelemetry
+`OTEL_*` ones (the SDK reads them; config values override them):
 
 ```bash
-export OBSERVABILITY_ENABLED=true
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
 export OTEL_EXPORTER_OTLP_PROTOCOL=grpc
 export OTEL_SERVICE_NAME=my-service
 ```
 
-See the root `README.md` for the full environment-variable contract.
+See the root `README.md` → Configuration for the full `init()` / `createScrubber()` field list.

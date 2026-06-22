@@ -1,1 +1,1 @@
-export { readEnvConfig, type EnvConfig } from './env.js';
+export { readOtelEnv, type OtelEnv } from './env.js';

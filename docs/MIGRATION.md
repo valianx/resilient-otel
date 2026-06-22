@@ -80,12 +80,12 @@ export class AppModule {}
 
 | Template env var | Package env var |
 |---|---|
-| `URL_COLLECTOR` | `OTEL_EXPORTER_OTLP_ENDPOINT` |
-| `SERVICE_NAME` | `OTEL_SERVICE_NAME` |
-| `OTEL_SAMPLING_RATIO` | `OTEL_TRACES_SAMPLER_ARG` |
-| `CH_OBSERVABILITY_ENABLED` (if present) | `OBSERVABILITY_ENABLED` |
-| `OTEL_ENVIRONMENT` (if present) | Set `OTEL_RESOURCE_ATTRIBUTES=deployment.environment=production` |
-| `SERVICE_VERSION` (if present) | Set `OTEL_RESOURCE_ATTRIBUTES=service.version=${GIT_SHA}` |
+| `URL_COLLECTOR` | `init({ endpoint })` or `OTEL_EXPORTER_OTLP_ENDPOINT` |
+| `SERVICE_NAME` | `init({ serviceName })` or `OTEL_SERVICE_NAME` |
+| `OTEL_SAMPLING_RATIO` | `init({ samplingRatio })` or `OTEL_TRACES_SAMPLER_ARG` |
+| `CH_OBSERVABILITY_ENABLED` (if present) | `init({ enabled })` — code config (default `true`); no env var |
+| `OTEL_ENVIRONMENT` (if present) | `init({ environment })` or `OTEL_RESOURCE_ATTRIBUTES=deployment.environment=...` |
+| `SERVICE_VERSION` (if present) | `init({ serviceVersion })` or `OTEL_RESOURCE_ATTRIBUTES=service.version=...` |
 
 ## Step 6 — Delete the local folder
 
@@ -111,16 +111,12 @@ const safe = sanitizeBody(requestBody);
 // AFTER
 import { createScrubber } from 'resilient-otel/scrub';
 const scrubber = createScrubber({
-  extraDenylist: ['my_custom_field'],
-  readEnvDenylist: true, // also reads LOG_REDACT_EXTRA_FIELDS
+  extraDenylist: ['my_custom_field', 'merchant_id', 'card_bin'],
 });
 const safe = scrubber.scrubAttrs(requestBody as Record<string, unknown>);
 ```
 
-To add extra fields at runtime:
-```bash
-LOG_REDACT_EXTRA_FIELDS=merchant_id,card_bin
-```
+All scrubber configuration is code-level — pass your extra denylist terms directly to `createScrubber()`. There is no env-var channel.
 
 ## DB statement PII
 

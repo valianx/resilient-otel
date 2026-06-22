@@ -2,7 +2,6 @@ import { type Scrubber, type ScrubberConfig, scrubberBrand } from '../types/inde
 import { DEFAULT_DENYLIST } from './denylist.js';
 import { DEFAULT_SECRET_PATTERNS, type SecretPattern } from './secrets.js';
 import { scrubAttrs as doScrubAttrs, redactString, type RedactOptions } from './redact.js';
-import { readEnvConfig } from '../config/env.js';
 
 // Re-export the canonical brand symbol (defined in types) used by the boot guard (R5).
 export { scrubberBrand };
@@ -26,26 +25,19 @@ export const noopScrubber: Scrubber = {
 (noopScrubber as unknown as Record<symbol, unknown>)[Symbol.for('resilient-otel.noop')] = true;
 
 /**
- * Create a real scrubber instance. Merge order:
- *   DEFAULT_DENYLIST ∪ extraDenylist ∪ env LOG_REDACT_EXTRA_FIELDS
+ * Create a real scrubber instance. All config is code-level (no env reads).
+ * Defaults: mode 'moderate', replacement '[REDACTED]', maxStringLength 1000.
+ * Denylist merge: DEFAULT_DENYLIST ∪ config.extraDenylist.
  */
 export function createScrubber(config?: ScrubberConfig): Scrubber {
-  const envCfg = readEnvConfig();
-
-  const mode = config?.mode ?? envCfg.sanitizationMode;
+  const mode = config?.mode ?? 'moderate';
   const replacement = config?.replacement ?? '[REDACTED]';
-  const maxStringLength = config?.maxStringLength ?? envCfg.maxStringLength;
-  const readEnvDenylist = config?.readEnvDenylist ?? true;
+  const maxStringLength = config?.maxStringLength ?? 1000;
 
   // Build merged denylist
   const denylist = new Set(DEFAULT_DENYLIST);
   for (const entry of config?.extraDenylist ?? []) {
     denylist.add(entry.toLowerCase());
-  }
-  if (readEnvDenylist) {
-    for (const field of envCfg.extraDenylistFields) {
-      denylist.add(field.toLowerCase());
-    }
   }
 
   // Build merged secret patterns

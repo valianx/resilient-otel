@@ -45,7 +45,7 @@ const handle = await init({
 await handle.shutdown();
 ```
 
-`init()` is a no-op (no exporters constructed) unless `OBSERVABILITY_ENABLED=true`, and is force-disabled by the standard `OTEL_SDK_DISABLED=true` kill-switch. When enabled it **requires a real scrubber** (boot guard) — passing none, or `noopScrubber`, throws.
+`init()` is enabled by default; pass `enabled: false` (wire it to your own flag) or set the standard `OTEL_SDK_DISABLED=true` for a no-op with no exporters constructed. When enabled it **requires a real scrubber** (boot guard) — passing none, or `noopScrubber`, throws.
 
 ## Auto-instrumentation ordering (required for HTTP/DB spans)
 
@@ -144,7 +144,6 @@ const scrubber = createScrubber({
   mode: 'strict',                                   // strict | moderate | disabled
   extraDenylist: ['my_secret_field'],               // merged onto the default denylist
   extraSecretPatterns: [/my-prefix-[A-Za-z0-9]{32}/], // merged onto the secret bank
-  readEnvDenylist: true,                            // also merge LOG_REDACT_EXTRA_FIELDS
 });
 
 scrubber.scrubAttrs({ password: 'x', email: 'a@b.com', safe: 'ok' });
@@ -154,7 +153,7 @@ scrubber.redact('user logged in with password=hunter2 and Bearer eyJ...');
 // → secrets + denylisted key=value pairs redacted inline
 ```
 
-Merge order: `DEFAULT_DENYLIST ∪ extraDenylist ∪ (LOG_REDACT_EXTRA_FIELDS, comma-separated)`.
+Merge order: `DEFAULT_DENYLIST ∪ extraDenylist`.
 
 ## Backends
 
@@ -163,24 +162,45 @@ The library emits OTLP and does not care where it lands — that is your Collect
 - **Local Collector → Elastic/Grafana/etc.**: set `OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317` and `OTEL_EXPORTER_OTLP_PROTOCOL=grpc`.
 - **Direct to Axiom**: set `OTEL_EXPORTER_OTLP_ENDPOINT=https://api.axiom.co` (HTTP), and pass `headers: axiomHeaders()` so the `Authorization` + `X-Axiom-Dataset` headers are built at runtime from `AXIOM_TOKEN`/`AXIOM_DATASET` (rotate the token without a code change).
 
-## Environment variable contract
+## Configuration
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `OBSERVABILITY_ENABLED` | `false` | Master switch. `false`/unset → no-op (no exporters constructed). |
-| `OTEL_SDK_DISABLED` | _(empty)_ | Standard kill-switch (`true` → no-op). Use for stdio/CLI/batch. |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | _(required when enabled)_ | OTLP endpoint (Collector or vendor). |
-| `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` | `grpc` or `http/protobuf`. |
-| `OTEL_SERVICE_NAME` | _(none)_ | `service.name` resource attribute. |
-| `OTEL_RESOURCE_ATTRIBUTES` | _(none)_ | e.g. `deployment.environment=production`. |
-| `OTEL_TRACES_SAMPLER_ARG` | `1.0` | Sampling ratio (0.0–1.0). |
-| `AXIOM_TOKEN` | _(none)_ | Consumed by `axiomHeaders()` at runtime. |
-| `AXIOM_DATASET` | _(none)_ | Consumed by `axiomHeaders()` at runtime. |
-| `LOG_SANITIZATION_MODE` | `moderate` | `strict` / `moderate` / `disabled`. |
-| `LOG_REDACT_EXTRA_FIELDS` | _(empty)_ | Comma-separated extra denylist terms. |
-| `LOG_MAX_STRING_LENGTH` | `1000` | Max individual string length in logs. |
-| `LOG_MAX_PAYLOAD_SIZE` | `10000` | Max payload size in bytes. |
-| `OTEL_SHUTDOWN_TIMEOUT` | `10000` | Graceful shutdown timeout (ms). |
+The library is **config-first**: it reads **no environment variables of its own**. All
+instance configuration is passed to `init()` and `createScrubber()`, and every field has a
+default — you wire values from wherever you like (your own env, config system, hardcoded).
+
+`init(config)` fields:
+
+| Field | Default | Purpose |
+|-------|---------|---------|
+| `enabled` | `true` | Master switch. `false` → no-op. Wire to your own flag. |
+| `scrubber` | _(required)_ | Boot guard — build with `createScrubber()`. |
+| `serviceName` | `OTEL_SERVICE_NAME` → `'unknown-service'` | `service.name`. |
+| `serviceVersion` | `'0.0.0'` | `service.version`. |
+| `environment` | _(none)_ | `deployment.environment`. |
+| `endpoint` | `OTEL_EXPORTER_OTLP_ENDPOINT` → SDK default | OTLP endpoint. |
+| `protocol` | `OTEL_EXPORTER_OTLP_PROTOCOL` → `'http/protobuf'` | `grpc` or `http/protobuf`. |
+| `headers` | _(none)_ | Static record or runtime thunk (e.g. `axiomHeaders()`). |
+| `samplingRatio` | `OTEL_TRACES_SAMPLER_ARG` → `1.0` | Trace sampling ratio (0–1). |
+| `shutdownTimeoutMs` | `10000` | Graceful-shutdown timeout. |
+| `instrumentations` | `[]` | Auto-instrumentations to register. |
+
+`createScrubber(config)` fields: `mode` (`'moderate'`), `extraDenylist` (`[]`),
+`extraSecretPatterns` (`[]`), `replacement` (`'[REDACTED]'`), `maxStringLength` (`1000`).
+
+### The only env vars involved — standard OpenTelemetry `OTEL_*`
+
+These are **not** our names; they are the OpenTelemetry spec's, read by the underlying SDK.
+Config values **win**; these fill the gap when a field is omitted:
+
+| Variable | Maps to |
+|----------|---------|
+| `OTEL_SDK_DISABLED=true` | Standard kill-switch → no-op (in addition to `enabled: false`). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `endpoint` |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | `protocol` |
+| `OTEL_SERVICE_NAME` | `serviceName` |
+| `OTEL_RESOURCE_ATTRIBUTES` | extra resource attributes (read by the SDK) |
+| `OTEL_TRACES_SAMPLER_ARG` | `samplingRatio` |
+| `AXIOM_TOKEN` / `AXIOM_DATASET` | read by `axiomHeaders()` only, at call time |
 
 ## Database statement PII
 

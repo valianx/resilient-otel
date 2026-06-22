@@ -10,7 +10,7 @@ export interface Scrubber {
 }
 
 export interface ScrubberConfig {
-  /** Redaction mode. Default from LOG_SANITIZATION_MODE, then 'moderate'. */
+  /** Redaction mode. Default: 'moderate'. */
   mode?: 'strict' | 'moderate' | 'disabled';
   /** Merged ON TOP of DEFAULT_DENYLIST. */
   extraDenylist?: string[];
@@ -18,32 +18,34 @@ export interface ScrubberConfig {
   extraSecretPatterns?: RegExp[];
   /** Replacement string. Default '[REDACTED]'. */
   replacement?: string;
-  /** Max individual string length. Default from LOG_MAX_STRING_LENGTH. */
+  /** Max individual string length (strict mode). Default: 1000. */
   maxStringLength?: number;
-  /** When true, also merges LOG_REDACT_EXTRA_FIELDS (comma-separated). Default true. */
-  readEnvDenylist?: boolean;
 }
 
 export interface ResilientOtelConfig {
-  /** Service name. Default: OTEL_SERVICE_NAME env. */
+  /**
+   * Master switch. Default: `true`. Wire it to your own flag (the library
+   * does NOT read any env var of its own). When `false`, init() is a no-op.
+   * The standard `OTEL_SDK_DISABLED=true` env var also forces a no-op.
+   */
+  enabled?: boolean;
+  /** Required (boot guard, R5). Build with createScrubber() from 'resilient-otel/scrub'. */
+  scrubber: Scrubber;
+  /** Service name. Config wins; falls back to OTEL_SERVICE_NAME, then 'unknown-service'. */
   serviceName?: string;
-  /** Service version. Default: package.json version. */
+  /** Service version. Default: '0.0.0'. */
   serviceVersion?: string;
   /** deployment.environment attribute. */
   environment?: string;
-  /** Env-var prefix. Default '' → reads OBSERVABILITY_ENABLED. */
-  envPrefix?: string;
-  /** Required when observability is enabled. Boot guard (R5). */
-  scrubber: Scrubber;
-  /** Exporter protocol. Default from OTEL_EXPORTER_OTLP_PROTOCOL, then 'http/protobuf'. */
+  /** Exporter protocol. Config wins; falls back to OTEL_EXPORTER_OTLP_PROTOCOL, then 'http/protobuf'. */
   protocol?: 'http/protobuf' | 'grpc';
-  /** OTLP collector base URL. Default from OTEL_EXPORTER_OTLP_ENDPOINT. */
+  /** OTLP endpoint. Config wins; falls back to OTEL_EXPORTER_OTLP_ENDPOINT (then the SDK default). */
   endpoint?: string;
   /** OTLP headers. Runtime thunk evaluated on each export to support token rotation. */
   headers?: Record<string, string> | (() => Record<string, string>);
-  /** Sampling ratio 0.0–1.0. Default from OTEL_TRACES_SAMPLER_ARG, then 1.0. */
+  /** Sampling ratio 0.0–1.0. Config wins; falls back to OTEL_TRACES_SAMPLER_ARG, then 1.0. */
   samplingRatio?: number;
-  /** Graceful shutdown timeout ms. Default from OTEL_SHUTDOWN_TIMEOUT, then 10000. */
+  /** Graceful shutdown timeout ms. Default: 10000 (code-only, no env). */
   shutdownTimeoutMs?: number;
   /** Optional instrumentations to pass to NodeSDK. */
   instrumentations?: unknown[];

@@ -2,8 +2,7 @@
  * Extending the scrubber — the headline feature.
  *
  * Add your own denylist words and secret patterns at runtime, on top of the
- * built-in PII denylist and secret bank. Words can also come from the
- * LOG_REDACT_EXTRA_FIELDS env var (comma-separated) when readEnvDenylist is on.
+ * built-in PII denylist and secret bank. All config is code-level — no env vars.
  *
  * Run: node --import tsx examples/03-custom-redaction.ts
  */
@@ -13,7 +12,6 @@ const scrubber = createScrubber({
   mode: 'strict',
   extraDenylist: ['internal_account_id', 'partner_secret'],
   extraSecretPatterns: [/acme-[A-Za-z0-9]{32}/], // a vendor token format of ours
-  readEnvDenylist: true, // also merge LOG_REDACT_EXTRA_FIELDS
 });
 
 // Object attributes: denylisted keys are replaced, safe keys preserved.
