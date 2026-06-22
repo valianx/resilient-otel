@@ -1,0 +1,161 @@
+{
+  "name": "resilient-otel",
+  "version": "0.1.0",
+  "description": "Framework-agnostic OpenTelemetry library: SDK init, extensible PII scrubber, taxonomy, metrics, log bridge, and NestJS adapter.",
+  "author": "valianx",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/valianx/resilient-otel.git"
+  },
+  "bugs": {
+    "url": "https://github.com/valianx/resilient-otel/issues"
+  },
+  "homepage": "https://github.com/valianx/resilient-otel#readme",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "bun": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./scrub": {
+      "bun": "./src/scrub/index.ts",
+      "types": "./dist/scrub/index.d.ts",
+      "import": "./dist/scrub/index.js",
+      "require": "./dist/scrub/index.cjs"
+    },
+    "./nestjs": {
+      "bun": "./src/nestjs/index.ts",
+      "types": "./dist/nestjs/index.d.ts",
+      "import": "./dist/nestjs/index.js",
+      "require": "./dist/nestjs/index.cjs"
+    },
+    "./preload": {
+      "bun": "./src/preload/index.ts",
+      "types": "./dist/preload/index.d.ts",
+      "import": "./dist/preload/index.js",
+      "require": "./dist/preload/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "bun test",
+    "test:node": "node --import tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "2.8.0",
+    "@opentelemetry/api-logs": "0.208.0",
+    "@opentelemetry/core": "2.8.0",
+    "@opentelemetry/exporter-logs-otlp-proto": "0.208.0",
+    "@opentelemetry/exporter-metrics-otlp-proto": "0.208.0",
+    "@opentelemetry/exporter-trace-otlp-proto": "0.208.0",
+    "@opentelemetry/resources": "2.8.0",
+    "@opentelemetry/sdk-logs": "2.8.0",
+    "@opentelemetry/sdk-metrics": "2.8.0",
+    "@opentelemetry/sdk-node": "2.8.0",
+    "@opentelemetry/sdk-trace-base": "2.8.0",
+    "@opentelemetry/semantic-conventions": "1.41.1"
+  },
+  "peerDependencies": {
+    "@nestjs/axios": ">=3 <5",
+    "@nestjs/common": ">=10 <12",
+    "@nestjs/core": ">=10 <12",
+    "@opentelemetry/api": ">=1.9.0",
+    "@opentelemetry/auto-instrumentations-node": ">=0.63.0",
+    "@opentelemetry/exporter-logs-otlp-grpc": ">=0.208.0",
+    "@opentelemetry/exporter-metrics-otlp-grpc": ">=0.208.0",
+    "@opentelemetry/exporter-trace-otlp-grpc": ">=0.208.0",
+    "@opentelemetry/instrumentation-http": ">=0.219.0",
+    "@opentelemetry/instrumentation-nestjs-core": ">=0.65.0",
+    "@opentelemetry/instrumentation-pg": ">=0.71.0",
+    "rxjs": "^7.0.0",
+    "winston": ">=3 <4",
+    "winston-transport": ">=4 <5"
+  },
+  "peerDependenciesMeta": {
+    "@nestjs/axios": {
+      "optional": true
+    },
+    "@nestjs/common": {
+      "optional": true
+    },
+    "@nestjs/core": {
+      "optional": true
+    },
+    "@opentelemetry/api": {
+      "optional": false
+    },
+    "@opentelemetry/auto-instrumentations-node": {
+      "optional": true
+    },
+    "@opentelemetry/exporter-logs-otlp-grpc": {
+      "optional": true
+    },
+    "@opentelemetry/exporter-metrics-otlp-grpc": {
+      "optional": true
+    },
+    "@opentelemetry/exporter-trace-otlp-grpc": {
+      "optional": true
+    },
+    "@opentelemetry/instrumentation-http": {
+      "optional": true
+    },
+    "@opentelemetry/instrumentation-nestjs-core": {
+      "optional": true
+    },
+    "@opentelemetry/instrumentation-pg": {
+      "optional": true
+    },
+    "rxjs": {
+      "optional": true
+    },
+    "winston": {
+      "optional": true
+    },
+    "winston-transport": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "bun-types": "^1.0.0",
+    "tsup": "^8.0.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0"
+  },
+  "keywords": [
+    "opentelemetry",
+    "otel",
+    "observability",
+    "tracing",
+    "metrics",
+    "logging",
+    "scrubber",
+    "pii",
+    "nestjs",
+    "nodejs",
+    "typescript",
+    "otlp",
+    "axiom"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

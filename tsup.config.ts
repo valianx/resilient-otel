@@ -1,0 +1,35 @@
+import { defineConfig } from 'tsup';
+
+export default defineConfig({
+  entry: {
+    index: 'src/index.ts',
+    'scrub/index': 'src/scrub/index.ts',
+    'nestjs/index': 'src/nestjs/index.ts',
+    'preload/index': 'src/preload/index.ts',
+  },
+  format: ['esm', 'cjs'],
+  dts: true,
+  splitting: false,
+  sourcemap: true,
+  clean: true,
+  treeshake: true,
+  minify: false,
+  target: 'es2020',
+  outDir: 'dist',
+  external: [
+    '@nestjs/common',
+    '@nestjs/core',
+    '@nestjs/axios',
+    'rxjs',
+    'winston',
+    'winston-transport',
+    '@opentelemetry/exporter-trace-otlp-grpc',
+    '@opentelemetry/exporter-logs-otlp-grpc',
+    '@opentelemetry/exporter-metrics-otlp-grpc',
+    '@opentelemetry/auto-instrumentations-node',
+    '@opentelemetry/instrumentation-http',
+    '@opentelemetry/instrumentation-nestjs-core',
+    '@opentelemetry/instrumentation-pg',
+  ],
+  platform: 'node',
+});
