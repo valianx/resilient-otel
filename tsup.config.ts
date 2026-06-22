@@ -26,6 +26,7 @@ export default defineConfig({
     '@opentelemetry/exporter-trace-otlp-grpc',
     '@opentelemetry/exporter-logs-otlp-grpc',
     '@opentelemetry/exporter-metrics-otlp-grpc',
+    '@grpc/grpc-js',
     '@opentelemetry/auto-instrumentations-node',
     '@opentelemetry/instrumentation-http',
     '@opentelemetry/instrumentation-nestjs-core',

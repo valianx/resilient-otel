@@ -1,11 +1,16 @@
 /**
  * Build OTLP exporters for traces, logs, and metrics.
  *
- * Default: http/protobuf via -otlp-proto packages.
- * gRPC: lazy-required only when protocol=grpc (R2 — grpc is a heavy optional peer dep).
+ * Default: http/protobuf via the -otlp-proto packages (static imports — they
+ * are runtime deps and ESM-safe).
+ * gRPC: dynamic import() only when protocol=grpc (R2 — grpc is a heavy optional
+ * peer dep). Dynamic import (not require) so the ESM bundle works too.
  *
  * Headers can be a static record or a thunk (runtime token rotation — recipe §4).
  */
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto';
+import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-proto';
+import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-proto';
 
 export interface ExporterOptions {
   protocol: 'http/protobuf' | 'grpc';
@@ -22,11 +27,12 @@ export interface OtelExporters {
 function resolveHeaders(
   headers: Record<string, string> | (() => Record<string, string>) | undefined,
 ): Record<string, string> | undefined {
-  if (typeof headers === 'function') return headers();
-  return headers;
+  return typeof headers === 'function' ? headers() : headers;
 }
 
-export function buildExporters(opts: ExporterOptions): OtelExporters {
+export async function buildExporters(
+  opts: ExporterOptions,
+): Promise<OtelExporters> {
   if (opts.protocol === 'grpc') {
     return buildGrpcExporters(opts);
   }
@@ -34,37 +40,7 @@ export function buildExporters(opts: ExporterOptions): OtelExporters {
 }
 
 function buildProtoExporters(opts: ExporterOptions): OtelExporters {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { OTLPTraceExporter } = require(
-    '@opentelemetry/exporter-trace-otlp-proto',
-  ) as {
-    OTLPTraceExporter: new (opts: {
-      url?: string;
-      headers?: Record<string, string>;
-    }) => import('@opentelemetry/sdk-trace-base').SpanExporter;
-  };
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { OTLPLogExporter } = require(
-    '@opentelemetry/exporter-logs-otlp-proto',
-  ) as {
-    OTLPLogExporter: new (opts: {
-      url?: string;
-      headers?: Record<string, string>;
-    }) => import('@opentelemetry/sdk-logs').LogRecordExporter;
-  };
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { OTLPMetricExporter } = require(
-    '@opentelemetry/exporter-metrics-otlp-proto',
-  ) as {
-    OTLPMetricExporter: new (opts: {
-      url?: string;
-      headers?: Record<string, string>;
-    }) => import('@opentelemetry/sdk-metrics').PushMetricExporter;
-  };
-
-  const headers = resolveHeaders(opts.headers);
-  const baseOpts = { url: opts.endpoint, headers };
-
+  const baseOpts = { url: opts.endpoint, headers: resolveHeaders(opts.headers) };
   return {
     traceExporter: new OTLPTraceExporter(baseOpts),
     logExporter: new OTLPLogExporter(baseOpts),
@@ -72,19 +48,16 @@ function buildProtoExporters(opts: ExporterOptions): OtelExporters {
   };
 }
 
-function buildGrpcExporters(opts: ExporterOptions): OtelExporters {
-  // Lazy-require the gRPC exporter (optional peer dep — R2)
-  let OTLPTraceExporter: new (o: unknown) => import('@opentelemetry/sdk-trace-base').SpanExporter;
-  let OTLPLogExporter: new (o: unknown) => import('@opentelemetry/sdk-logs').LogRecordExporter;
-  let OTLPMetricExporter: new (o: unknown) => import('@opentelemetry/sdk-metrics').PushMetricExporter;
-
+async function buildGrpcExporters(
+  opts: ExporterOptions,
+): Promise<OtelExporters> {
+  let trace: typeof import('@opentelemetry/exporter-trace-otlp-grpc');
+  let logs: typeof import('@opentelemetry/exporter-logs-otlp-grpc');
+  let metrics: typeof import('@opentelemetry/exporter-metrics-otlp-grpc');
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    ({ OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-grpc'));
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    ({ OTLPLogExporter } = require('@opentelemetry/exporter-logs-otlp-grpc'));
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    ({ OTLPMetricExporter } = require('@opentelemetry/exporter-metrics-otlp-grpc'));
+    trace = await import('@opentelemetry/exporter-trace-otlp-grpc');
+    logs = await import('@opentelemetry/exporter-logs-otlp-grpc');
+    metrics = await import('@opentelemetry/exporter-metrics-otlp-grpc');
   } catch {
     throw new Error(
       'Protocol "grpc" requires optional peer deps @opentelemetry/exporter-{trace,logs,metrics}-otlp-grpc. ' +
@@ -92,12 +65,21 @@ function buildGrpcExporters(opts: ExporterOptions): OtelExporters {
     );
   }
 
-  const headers = resolveHeaders(opts.headers);
-  const grpcOpts = { url: opts.endpoint, metadata: headers };
+  // gRPC carries headers as grpc Metadata, not a plain record. Build it only
+  // when headers are present (a local Collector usually needs none).
+  const headerRecord = resolveHeaders(opts.headers);
+  let metadata: import('@grpc/grpc-js').Metadata | undefined;
+  if (headerRecord && Object.keys(headerRecord).length > 0) {
+    const { Metadata } = await import('@grpc/grpc-js');
+    const md = new Metadata();
+    for (const [key, value] of Object.entries(headerRecord)) md.set(key, value);
+    metadata = md;
+  }
 
+  const grpcOpts = { url: opts.endpoint, metadata };
   return {
-    traceExporter: new OTLPTraceExporter(grpcOpts),
-    logExporter: new OTLPLogExporter(grpcOpts),
-    metricExporter: new OTLPMetricExporter(grpcOpts),
+    traceExporter: new trace.OTLPTraceExporter(grpcOpts),
+    logExporter: new logs.OTLPLogExporter(grpcOpts),
+    metricExporter: new metrics.OTLPMetricExporter(grpcOpts),
   };
 }

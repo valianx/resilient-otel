@@ -85,8 +85,8 @@ export async function init(config: ResilientOtelConfig): Promise<ShutdownHandle>
       : {}),
   });
 
-  // Build exporters
-  const { traceExporter, logExporter, metricExporter } = buildExporters({
+  // Build exporters (async: proto via static import, grpc via dynamic import)
+  const { traceExporter, logExporter, metricExporter } = await buildExporters({
     protocol,
     endpoint,
     headers: config.headers,
