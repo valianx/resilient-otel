@@ -50,6 +50,21 @@ For automatic HTTP/DB instrumentation, launch with the preload entry (patching m
 node --import resilient-otel/preload ./dist/main.js
 ```
 
+## Environment variables
+
+The library is config-first and reads **no env vars of its own** — every option is a field on `init()`. The only env vars involved are the **standard OpenTelemetry `OTEL_*`** ones, read natively by the underlying SDK. They act as fallbacks when the matching config field is omitted (config always wins):
+
+| Variable | Maps to | Example |
+|----------|---------|---------|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `endpoint` | `http://otel-collector:4317` |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | `protocol` | `grpc` or `http/protobuf` |
+| `OTEL_SERVICE_NAME` | `serviceName` | `my-service` |
+| `OTEL_RESOURCE_ATTRIBUTES` | resource attributes | `deployment.environment=production` |
+| `OTEL_TRACES_SAMPLER_ARG` | `samplingRatio` | `1.0` |
+| `OTEL_SDK_DISABLED` | kill-switch (`true` → no-op) | `true` |
+
+Direct-to-Axiom export additionally reads `AXIOM_TOKEN` and `AXIOM_DATASET`, but only via `axiomHeaders()`, at call time. Full option contract: [docs/CONFIG.md](docs/CONFIG.md).
+
 ## Documentation
 
 - [Configuration](docs/CONFIG.md) — every `init()` / `createScrubber()` option, defaults, and the standard `OTEL_*` fallbacks
