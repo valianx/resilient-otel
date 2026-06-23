@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4]
+
+### Fixed
+- **`nestjs/LoggingMiddleware` now logs the real elapsed request `duration`.** It was logging `Date.now()` (a Unix epoch in ms, ~1.7e12) instead of elapsed time, so every "duration" field was unusable for latency. It now captures `start` at request entry and logs `Date.now() - start`. Covered by a regression test.
+
+### Added
+- **`nestjs/LoggingMiddleware` reached parity with the reference adapter.** It now opens a per-request `HTTP Request: …` child span (active for the request lifetime, carrying `http.status_code`/`http.status_message`, ended on `finish`) and logs the request body, response headers and response size — all scrubbed.
+- **`ObservabilityModule.forWiring({ scrubber })`** — a second entry point that wires the DI providers (interceptor, middleware, filter, execution-context) **without** calling `init()`. For apps that initialise the SDK earlier in a preload step (an `instrumentation.ts` awaited before the app modules load, required so auto-instrumentation patches http/pg/redis before they are first required). `forRoot()` keeps owning the full lifecycle (init + graceful shutdown) and is unchanged.
+
 ## [0.1.3]
 
 ### Fixed

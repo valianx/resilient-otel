@@ -1,9 +1,19 @@
-import { Global, Module, DynamicModule, Scope } from '@nestjs/common';
+import {
+  Global,
+  Module,
+  DynamicModule,
+  Provider,
+  Scope,
+} from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 
 import { init } from '../core/init.js';
 import { executionContext } from '../context/execution-context.js';
-import type { ResilientOtelConfig, ShutdownHandle } from '../types/index.js';
+import type {
+  ResilientOtelConfig,
+  Scrubber,
+  ShutdownHandle,
+} from '../types/index.js';
 
 import { ExecutionContextInterceptor } from './execution-context.interceptor.js';
 import { HttpClientInterceptor } from './http-client.interceptor.js';
@@ -19,16 +29,88 @@ const SHUTDOWN_HANDLE = Symbol('RESILIENT_OTEL_SHUTDOWN_HANDLE');
 const SCRUBBER_TOKEN = Symbol('RESILIENT_OTEL_SCRUBBER');
 
 /**
+ * Providers shared by both entry points: the scrubber, the execution-context
+ * singleton, the request interceptor (also registered globally), the HTTP-client
+ * interceptor, the request/response logging middleware, the exception filter,
+ * the per-request RequestContext, and the trace-header middleware. None of these
+ * touch the SDK lifecycle — `init()` and shutdown are wired only by `forRoot`.
+ */
+function wiringProviders(scrubber: Scrubber): Provider[] {
+  return [
+    // Provide the scrubber for injection into middleware/filter
+    {
+      provide: SCRUBBER_TOKEN,
+      useValue: scrubber,
+    },
+
+    // ExecutionContextService is the core singleton (no decorator needed)
+    {
+      provide: 'ExecutionContext',
+      useValue: executionContext,
+    },
+
+    // LoggingMiddleware with scrubber injected
+    {
+      provide: LoggingMiddleware,
+      useFactory: (s: Scrubber) => new LoggingMiddleware(s),
+      inject: [SCRUBBER_TOKEN],
+    },
+
+    // HttpExceptionFilter with scrubber injected
+    {
+      provide: HttpExceptionFilter,
+      useFactory: (s: Scrubber) => new HttpExceptionFilter(s),
+      inject: [SCRUBBER_TOKEN],
+    },
+
+    // ExecutionContextInterceptor as global APP_INTERCEPTOR
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: ExecutionContextInterceptor,
+    },
+
+    // Transient interceptors
+    ExecutionContextInterceptor,
+    HttpClientInterceptor,
+
+    // REQUEST-scoped RequestContext for compatibility
+    {
+      provide: RequestContext,
+      useClass: RequestContext,
+      scope: Scope.REQUEST,
+    },
+
+    // TraceMiddleware for response header injection
+    TraceMiddleware,
+  ];
+}
+
+const WIRING_EXPORTS = [
+  'ExecutionContext',
+  LoggingMiddleware,
+  HttpExceptionFilter,
+  HttpClientInterceptor,
+  RequestContext,
+  TraceMiddleware,
+  ExecutionContextInterceptor,
+] as const;
+
+/**
  * ObservabilityModule
  *
- * @Global() module that wires the full observability stack:
- * - Calls core `init(config)` exactly once (AC-1 of PR-3)
- * - Provides the ShutdownHandle to TelemetryLifecycleService for graceful shutdown
- * - Registers ExecutionContextInterceptor as APP_INTERCEPTOR
- * - Exports all services for use in feature modules
+ * @Global() module that wires the observability stack. Two entry points:
  *
- * Usage:
- *   ObservabilityModule.forRoot({ scrubber: createScrubber() })
+ * - `forRoot(config)` — owns the full lifecycle: calls core `init(config)` once,
+ *   provides the ShutdownHandle to TelemetryLifecycleService for graceful
+ *   shutdown, and wires the interceptor/middleware/filter/context providers.
+ *     ObservabilityModule.forRoot({ scrubber: createScrubber(), ... })
+ *
+ * - `forWiring({ scrubber })` — wires ONLY the DI providers (interceptor,
+ *   middleware, filter, context) and does NOT call `init()`. Use this when the
+ *   SDK is initialised earlier in a preload step (e.g. an `instrumentation.ts`
+ *   awaited before the app modules load), which is required for auto-
+ *   instrumentation to patch http/pg/redis before they are first required.
+ *     ObservabilityModule.forWiring({ scrubber: createScrubber() })
  */
 @Global()
 @Module({})
@@ -37,7 +119,7 @@ export class ObservabilityModule {
     return {
       module: ObservabilityModule,
       providers: [
-        // 1. Init the SDK once at module load and provide the ShutdownHandle
+        // Init the SDK once at module load and provide the ShutdownHandle
         {
           provide: SHUTDOWN_HANDLE,
           useFactory: async (): Promise<ShutdownHandle> => {
@@ -45,19 +127,7 @@ export class ObservabilityModule {
           },
         },
 
-        // 2. Provide the scrubber for injection into middleware/filter
-        {
-          provide: SCRUBBER_TOKEN,
-          useValue: config.scrubber,
-        },
-
-        // 3. ExecutionContextService is the core singleton (no decorator needed)
-        {
-          provide: 'ExecutionContext',
-          useValue: executionContext,
-        },
-
-        // 4. TelemetryLifecycleService — singleton, receives ShutdownHandle
+        // TelemetryLifecycleService — singleton, receives ShutdownHandle
         {
           provide: TelemetryLifecycleService,
           useFactory: (handle: ShutdownHandle): TelemetryLifecycleService => {
@@ -69,52 +139,17 @@ export class ObservabilityModule {
           scope: Scope.DEFAULT,
         },
 
-        // 5. LoggingMiddleware with scrubber injected
-        {
-          provide: LoggingMiddleware,
-          useFactory: (scrubber: typeof config.scrubber) =>
-            new LoggingMiddleware(scrubber),
-          inject: [SCRUBBER_TOKEN],
-        },
-
-        // 6. HttpExceptionFilter with scrubber injected
-        {
-          provide: HttpExceptionFilter,
-          useFactory: (scrubber: typeof config.scrubber) =>
-            new HttpExceptionFilter(scrubber),
-          inject: [SCRUBBER_TOKEN],
-        },
-
-        // 7. ExecutionContextInterceptor as global APP_INTERCEPTOR
-        {
-          provide: APP_INTERCEPTOR,
-          useClass: ExecutionContextInterceptor,
-        },
-
-        // 8. Transient interceptors
-        ExecutionContextInterceptor,
-        HttpClientInterceptor,
-
-        // 9. REQUEST-scoped RequestContext for compatibility
-        {
-          provide: RequestContext,
-          useClass: RequestContext,
-          scope: Scope.REQUEST,
-        },
-
-        // 10. TraceMiddleware for response header injection
-        TraceMiddleware,
+        ...wiringProviders(config.scrubber),
       ],
-      exports: [
-        'ExecutionContext',
-        TelemetryLifecycleService,
-        LoggingMiddleware,
-        HttpExceptionFilter,
-        HttpClientInterceptor,
-        RequestContext,
-        TraceMiddleware,
-        ExecutionContextInterceptor,
-      ],
+      exports: [TelemetryLifecycleService, ...WIRING_EXPORTS],
+    };
+  }
+
+  static forWiring(options: { scrubber: Scrubber }): DynamicModule {
+    return {
+      module: ObservabilityModule,
+      providers: wiringProviders(options.scrubber),
+      exports: [...WIRING_EXPORTS],
     };
   }
 }

@@ -2,11 +2,14 @@
  * nestjs.module — AC-3 of PR-3: peer deps meta.
  * Tests NestJS adapter code paths that do not require a live Nest container.
  */
+import { EventEmitter } from 'node:events';
+import { logs } from '@opentelemetry/api-logs';
 import { describe, it, expect } from './helpers/test-kit';
 import { TelemetryLifecycleService } from '../src/nestjs/telemetry-lifecycle.service';
 import { normalizeRoute } from '../src/utils/route';
 import { createScrubber } from '../src/scrub/scrubber';
 import { LoggingMiddleware } from '../src/nestjs/logging.middleware';
+import { ObservabilityModule } from '../src/nestjs/observability.module';
 
 describe('TelemetryLifecycleService — double-shutdown guard (AC-2 of PR-3)', () => {
   it('does not call shutdown twice when both hooks fire', async () => {
@@ -46,6 +49,74 @@ describe('LoggingMiddleware — normalizeRoute integration (AC-5 of PR-3)', () =
     const uuid = '550e8400-e29b-41d4-a716-446655440000';
     expect(normalizeRoute(`/users/${uuid}/profile`)).toBe('/users/:id/profile');
     expect(normalizeRoute('/items/42/details')).toBe('/items/:id/details');
+  });
+});
+
+describe('LoggingMiddleware — response duration is elapsed ms, not epoch (regression)', () => {
+  it('logs a small elapsed duration on finish', () => {
+    const captured: Array<Record<string, unknown>> = [];
+    // Capture emitted log records through a fake global LoggerProvider.
+    logs.setGlobalLoggerProvider({
+      getLogger: () => ({
+        emit: (record: { attributes?: Record<string, unknown> }) => {
+          if (record.attributes) captured.push(record.attributes);
+        },
+      }),
+    } as never);
+
+    const mw = new LoggingMiddleware(createScrubber({ mode: 'disabled' }));
+
+    const req = {
+      method: 'GET',
+      originalUrl: '/users/42',
+      headers: { host: 'localhost' },
+      body: { ok: true },
+    } as never;
+
+    const res = new EventEmitter() as EventEmitter & Record<string, unknown>;
+    res.statusCode = 200;
+    res.statusMessage = 'OK';
+    res.getHeader = () => undefined;
+    res.getHeaders = () => ({ 'content-type': 'application/json' });
+    res.send = (b: unknown) => b;
+
+    let nextCalled = false;
+    mw.use(req, res as never, () => {
+      nextCalled = true;
+    });
+    expect(nextCalled).toBe(true);
+
+    res.emit('finish');
+
+    const response = captured.find((a) => a.operation === 'response');
+    expect(response).toBeDefined();
+    const duration = Number((response as Record<string, unknown>).duration);
+    // Elapsed time is a few ms; the old bug logged Date.now() (~1.7e12 ms).
+    expect(duration >= 0 && duration < 100_000).toBe(true);
+  });
+});
+
+describe('ObservabilityModule — forWiring wires DI without init/lifecycle', () => {
+  const scrubber = createScrubber({ mode: 'disabled' });
+
+  it('forWiring exports the wiring providers', () => {
+    const mod = ObservabilityModule.forWiring({ scrubber });
+    expect(mod.exports).toContain(LoggingMiddleware);
+    expect(mod.exports).toContain('ExecutionContext');
+  });
+
+  it('forWiring does NOT provide or export TelemetryLifecycleService (no init/shutdown)', () => {
+    const mod = ObservabilityModule.forWiring({ scrubber });
+    const provideTokens = (mod.providers ?? []).map((p) =>
+      typeof p === 'object' && p !== null && 'provide' in p ? p.provide : p,
+    );
+    expect(provideTokens).not.toContain(TelemetryLifecycleService);
+    expect(mod.exports).not.toContain(TelemetryLifecycleService);
+  });
+
+  it('forRoot exports TelemetryLifecycleService (owns the lifecycle)', () => {
+    const mod = ObservabilityModule.forRoot({ scrubber });
+    expect(mod.exports).toContain(TelemetryLifecycleService);
   });
 });
 

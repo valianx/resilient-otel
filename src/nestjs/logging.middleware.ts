@@ -11,27 +11,58 @@ const EXCLUDED_ENDPOINTS = [
   /^\/\.well-known\/acme-challenge/,
 ];
 
+// Instrumentation scope name for the per-request child span. This labels the
+// emitter, not the service — the service name comes from the SDK resource.
+const TRACER_NAME = 'resilient-otel/nestjs';
+
+/** JSON.stringify that never throws (circular refs → String fallback). */
+function safeJson(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
 /**
  * LoggingMiddleware
  *
- * Logs incoming requests and responses with scrubbed headers/body.
- * Uses core `normalizeRoute` to set the parent span name to the route pattern
- * (AC-5 of PR-3).
+ * Logs incoming requests and successful responses with scrubbed headers/body,
+ * and opens a per-request child span so downstream work is grouped under it.
  *
- * Ported from nest-template/observability/middlewares/logging.middleware.ts.
+ * - Sets the parent (HTTP-instrumentation) span name to the normalised route
+ *   pattern via `normalizeRoute`, so APM groups transactions by route.
+ * - Opens an `HTTP Request: …` child span, makes it the active span for the
+ *   request lifetime, records `http.status_code`/`http.status_message`, and
+ *   ends it on `finish`.
+ * - Logs the real elapsed `duration` (ms), response headers and response size.
+ *
+ * Redaction is delegated to the injected `Scrubber`. Errors are handled by
+ * `HttpExceptionFilter`, so only successful responses are logged here.
  */
 @Injectable()
 export class LoggingMiddleware implements NestMiddleware {
   constructor(private readonly scrubber: Scrubber) {}
 
+  /** Scrub object-shaped values; pass primitives through unchanged. */
+  private scrub(value: unknown): unknown {
+    if (value && typeof value === 'object') {
+      return this.scrubber.scrubAttrs(value as Record<string, unknown>);
+    }
+    return value;
+  }
+
   use(req: Request, res: Response, next: NextFunction): void {
-    const { method, originalUrl, headers: reqHeaders } = req;
+    const { method, originalUrl, headers: reqHeaders, body: reqBody } = req;
+    const start = Date.now();
 
     if (EXCLUDED_ENDPOINTS.some((re) => re.test(originalUrl))) {
       next();
       return;
     }
 
+    // Rename the parent span (from HTTP instrumentation) to the route pattern
+    // so APM groups transactions by route (e.g. "POST /bank-accounts").
     const route = normalizeRoute(originalUrl);
     const parentSpan = trace.getSpan(context.active());
     if (parentSpan) {
@@ -39,16 +70,21 @@ export class LoggingMiddleware implements NestMiddleware {
       parentSpan.setAttribute('http.route', route);
     }
 
-    const sanitizedHeaders = this.scrubber.scrubAttrs(
-      reqHeaders as Record<string, unknown>,
-    );
+    const tracer = trace.getTracer(TRACER_NAME);
+    const span = tracer.startSpan(`HTTP Request: ${method} ${originalUrl}`, {
+      attributes: {
+        'http.method': method,
+        'http.url': originalUrl,
+      },
+    });
 
     emitLog('info', {
       operation: 'request',
       msg: `Incoming request: ${method} ${originalUrl}`,
       method,
       url: originalUrl,
-      headers: JSON.stringify(sanitizedHeaders),
+      headers: safeJson(this.scrub(reqHeaders)),
+      body: safeJson(this.scrub(reqBody)),
     });
 
     const originalSend = res.send.bind(res);
@@ -56,7 +92,10 @@ export class LoggingMiddleware implements NestMiddleware {
 
     res.send = (body: unknown) => {
       const contentType = res.getHeader('content-type')?.toString() ?? '';
-      if (contentType.includes('application/json') && typeof body === 'string') {
+      if (
+        contentType.includes('application/json') &&
+        typeof body === 'string'
+      ) {
         try {
           responseBody = JSON.parse(body);
         } catch {
@@ -68,27 +107,39 @@ export class LoggingMiddleware implements NestMiddleware {
       return (originalSend as (body: unknown) => Response)(body);
     };
 
-    res.on('finish', () => {
-      const { statusCode, statusMessage } = res;
-      const isSuccess = statusCode >= 200 && statusCode < 400;
-      if (!isSuccess) return; // Errors handled by HttpExceptionFilter
+    context.with(trace.setSpan(context.active(), span), () => {
+      res.on('finish', () => {
+        const duration = Date.now() - start;
+        const responseSize =
+          res.getHeader('content-length')?.toString() ?? 'unknown';
+        const { statusCode, statusMessage } = res;
+        const isSuccess = statusCode >= 200 && statusCode < 400;
 
-      const sanitizedResponse = this.scrubber.scrubAttrs(
-        (responseBody as Record<string, unknown>) ?? {},
-      );
+        span.setAttribute('http.status_code', statusCode);
+        if (statusMessage) {
+          span.setAttribute('http.status_message', statusMessage);
+        }
 
-      emitLog('info', {
-        operation: 'response',
-        msg: `Response for: ${method} ${originalUrl}`,
-        method,
-        url: originalUrl,
-        statusCode: String(statusCode),
-        statusMessage,
-        duration: String(Date.now()),
-        body: JSON.stringify(sanitizedResponse),
+        // Only log successful responses (errors go through HttpExceptionFilter).
+        if (isSuccess) {
+          emitLog('info', {
+            operation: 'response',
+            msg: `Response for: ${method} ${originalUrl}`,
+            method,
+            url: originalUrl,
+            statusCode: String(statusCode),
+            statusMessage,
+            headers: safeJson(this.scrub(res.getHeaders())),
+            responseSize: String(responseSize),
+            duration: String(duration),
+            body: safeJson(this.scrub(responseBody)),
+          });
+        }
+
+        span.end();
       });
-    });
 
-    next();
+      next();
+    });
   }
 }
