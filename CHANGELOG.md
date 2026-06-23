@@ -23,9 +23,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`FanOutLogRecordProcessor` and `ConsoleLogRecordExporter` (internal).** Both are internal to the `index` bundle; no new entry point or `exports` map change.
 
+### Fixed
+
+- **`mode: 'disabled'` now returns body text unredacted.** Previously, `redactString` (used for log body text) had no disabled-mode guard, so `key=value` inline patterns and secret regexes were still applied to body text even with `mode: 'disabled'`. Only attribute redaction (`scrubAttrs`) short-circuited correctly. Both now short-circuit consistently: a disabled scrubber is a full no-op for attributes AND body text. **Behaviour change for `mode: 'disabled'` consumers:** body text that previously had inline patterns replaced now passes through raw. This is intentional — `disabled` means "no redaction anywhere".
+
+- **Console exporter: fixed semantic fields now always win over same-named attributes.** If a log record carried an attribute named `timestamp`, `trace_id`, `span_id`, `level`, or `msg`, it previously overwrote the authoritative value derived from `hrTime` / `spanContext` / `severityText` / `body`. Fixed: attributes are spread first, then the authoritative derived values overwrite them. Tracing queries that rely on `trace_id` / `span_id` being from `spanContext` are no longer at risk of receiving an arbitrary attribute value.
+
 ### Migration note
 
 Existing consumers that pass `instrumentations`, `scrubber`, and wire their own SIGTERM handlers see zero change — all new options are absent-by-default. Enabling `consoleExport: true` on a consumer that already hand-rolls a `console.log` sink will double-log; delete the manual sink when enabling.
+
+`mode: 'disabled'` consumers: if your log bodies contained inline `key=value` patterns that were previously being redacted even in disabled mode, those will now appear raw. If you relied on that partial redaction, switch to `mode: 'moderate'`.
 
 ## [0.1.4]
 

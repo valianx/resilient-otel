@@ -6,7 +6,8 @@
  *   - forceFlush() delegates to all downstreams concurrently
  *   - shutdown() delegates to all downstreams concurrently
  *   - End-to-end scrub→fanout: denylisted attribute is [REDACTED] in both
- *     captured records; disabled-mode scrubber passes raw values to both.
+ *     captured records; disabled-mode scrubber passes raw values (attrs AND body)
+ *     to both downstreams.
  */
 import { describe, it, expect } from './helpers/test-kit';
 import { FanOutLogRecordProcessor } from '../src/core/fanout-processor';
@@ -136,17 +137,16 @@ describe('FanOutLogRecordProcessor — end-to-end scrub→fanout', () => {
     expect(String(b.captured[0].body)).not.toContain('secret123');
   });
 
-  it('disabled-mode scrubber: attribute values pass to both downstreams unchanged', () => {
+  it('disabled-mode scrubber: attribute values AND body pass to both downstreams raw', () => {
     const scrubber = createScrubber({ mode: 'disabled' });
     const a = makeCapturingDownstream();
     const b = makeCapturingDownstream();
     const fanout = new FanOutLogRecordProcessor([a.processor, b.processor]);
     const scrubProc = new ScrubLogRecordProcessor(fanout, scrubber);
 
-    // In disabled mode, scrubAttrs() is a no-op: attributes pass through raw.
-    // (Body redaction via redactString is a separate concern; scrubAttrs is what
-    // protects attribute fields — and that is disabled here, so password is raw.)
-    const record = makeRecord({ password: 'raw-secret', user: 'alice' }, 'a test body');
+    // In disabled mode, scrubAttrs() is a no-op AND redactString returns text
+    // unchanged — both attributes and body pass through raw on both sinks.
+    const record = makeRecord({ password: 'raw-secret', user: 'alice' }, 'password=raw-secret');
     scrubProc.onEmit(record);
 
     // Disabled mode: attribute values reach both sinks unredacted
@@ -154,5 +154,9 @@ describe('FanOutLogRecordProcessor — end-to-end scrub→fanout', () => {
     expect(a.captured[0].attributes?.['user']).toBe('alice');
     expect(b.captured[0].attributes?.['password']).toBe('raw-secret');
     expect(b.captured[0].attributes?.['user']).toBe('alice');
+
+    // Disabled mode: body text also passes raw (no denylist/secret redaction)
+    expect(String(a.captured[0].body)).toContain('raw-secret');
+    expect(String(b.captured[0].body)).toContain('raw-secret');
   });
 });

@@ -50,7 +50,9 @@ Redaction is wired into the SDK as a `ScrubSpanProcessor` + `ScrubLogRecordProce
 
 ## Disabled-mode contract
 
-`mode: 'disabled'` short-circuits all attribute redaction in `scrubAttrs()`. This means a disabled scrubber passes attribute values to **every downstream sink** — including the stdout console sink when `consoleExport: true`. There is no separate code path; the console sink inherits disabled-mode behaviour because it sits behind the same scrub stage. Use `mode: 'disabled'` only in local development where PII exposure is acceptable.
+`mode: 'disabled'` short-circuits all redaction — both attribute scrubbing (`scrubAttrs`) and body-text redaction (`redactString`). A disabled scrubber passes every value, including sensitive attributes and inline `key=value` patterns in body text, to **every downstream sink** unchanged — including the stdout console sink when `consoleExport: true`.
+
+There is no separate code path; both sinks inherit disabled-mode behaviour because they share the single scrub stage. Use `mode: 'disabled'` only in local development where PII exposure is acceptable.
 
 ## Database statement PII
 

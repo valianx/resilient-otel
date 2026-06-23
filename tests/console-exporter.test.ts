@@ -171,4 +171,32 @@ describe('ConsoleLogRecordExporter', () => {
     expect(parsed.trace_id).toBe('');
     expect(parsed.span_id).toBe('');
   });
+
+  it('fixed semantic fields win over same-named attributes (collision safety)', () => {
+    // An attribute named `timestamp` or `trace_id` must NOT overwrite the
+    // authoritative values derived from hrTime / spanContext.
+    const record = makeRecord({
+      hrTime: [1_750_000_000, 0],
+      traceId: 'authoritative-trace-id-1234567890ab',
+      spanId: 'authoritative-span',
+      attributes: {
+        timestamp: 'ATTRIB-TIMESTAMP-SHOULD-NOT-WIN',
+        trace_id: 'ATTRIB-TRACE-SHOULD-NOT-WIN',
+        span_id: 'ATTRIB-SPAN-SHOULD-NOT-WIN',
+        level: 'ATTRIB-LEVEL-SHOULD-NOT-WIN',
+        msg: 'ATTRIB-MSG-SHOULD-NOT-WIN',
+        signal: 'log',
+      },
+    });
+    exporter.export([record], () => {});
+    const parsed = JSON.parse(capturedLines[0].trim()) as Record<string, unknown>;
+    // Fixed fields derived from the record must win
+    expect(parsed.timestamp).toBe(new Date(1_750_000_000_000).toISOString());
+    expect(parsed.trace_id).toBe('authoritative-trace-id-1234567890ab');
+    expect(parsed.span_id).toBe('authoritative-span');
+    expect(parsed.level).toBe('info'); // from severityText default
+    expect(parsed.msg).toBe('test message'); // from body default
+    // Non-colliding attribute still present
+    expect(parsed.signal).toBe('log');
+  });
 });

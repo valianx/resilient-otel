@@ -40,8 +40,11 @@ function hrTimeToIso(hrTime: [number, number] | undefined): string {
 /**
  * Serialize a ReadableLogRecord to the NDJSON stdout shape.
  *
- * Field order (stable): timestamp, level, msg, trace_id, span_id, then all
- * flattened attributes (already scrubbed by the upstream ScrubLogRecordProcessor).
+ * Field order (stable): attributes spread first (extra context), then the fixed
+ * semantic fields (timestamp, level, msg, trace_id, span_id) LAST so they always
+ * win over any same-named attribute. An attribute named `timestamp` or `trace_id`
+ * must never silently overwrite the authoritative values derived from hrTime /
+ * spanContext — those are what tracing queries rely on.
  */
 function toConsoleRecord(record: ReadableLogRecord): ConsoleLogRecord {
   const traceId = record.spanContext?.traceId ?? '';
@@ -50,15 +53,17 @@ function toConsoleRecord(record: ReadableLogRecord): ConsoleLogRecord {
   const timestamp = hrTimeToIso(record.hrTime as [number, number] | undefined);
 
   // Flatten scrubbed attributes — these come pre-redacted from the scrub stage.
+  // Spread first so that any attribute with a colliding name (e.g. `timestamp`,
+  // `trace_id`) is overwritten by the authoritative derived values below.
   const attrs = record.attributes as Record<string, unknown>;
 
   return {
+    ...attrs,
     timestamp,
     level,
     msg: record.body,
     trace_id: traceId,
     span_id: spanId,
-    ...attrs,
   };
 }
 
