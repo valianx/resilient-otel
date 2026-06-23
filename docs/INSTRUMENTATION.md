@@ -152,6 +152,82 @@ requestsCounter.add(1, { route: '/checkout', outcome: 'success' });
 requestDurationHistogram.record(durationMs, { route: '/checkout' });
 ```
 
+### Logging a call to an external service (request + response)
+
+A very common flow: an incoming request reaches your service, your service calls an external service, gets a response, and replies. You want **one trace** covering the whole chain, with the external **request** and **response** each logged and redacted.
+
+Wrap the external call in a child span and emit the request/response logs **inside** it — `emitLog` auto-correlates to the active span (native `trace_id`/`span_id`), so the logs attach to the call without any manual IDs:
+
+```typescript
+import { trace, SpanStatusCode } from '@opentelemetry/api';
+import { emitLog, taxonomyAttrs, Operation, Target } from 'resilient-otel';
+
+const tracer = trace.getTracer('my-service');
+
+async function chargePayment(payload: ChargeInput) {
+  // child of the incoming-request span → same trace as the whole flow
+  return tracer.startActiveSpan('external.payments.charge', async (span) => {
+    span.setAttribute('http.method', 'POST');
+    span.setAttribute('http.url', 'https://payments.example.com/charge');
+
+    // 1) external REQUEST
+    emitLog('info', {
+      msg: 'Outgoing request to payments service',
+      ...taxonomyAttrs(Operation.Request, Target.External),
+      http_method: 'POST',
+      http_url: 'https://payments.example.com/charge',
+      body: scrubber.scrubAttrs(payload), // redact PII/secrets BEFORE export
+    });
+
+    try {
+      const res = await fetch('https://payments.example.com/charge', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+
+      // 2) external RESPONSE
+      emitLog('info', {
+        msg: `Payments service responded ${res.status}`,
+        ...taxonomyAttrs(Operation.Response, Target.External),
+        http_url: 'https://payments.example.com/charge',
+        status_code: res.status,
+        body: scrubber.scrubAttrs(data),
+      });
+      span.setStatus({ code: SpanStatusCode.OK });
+      return data;
+    } catch (err) {
+      // external ERROR (same axis, Operation.Error)
+      emitLog('error', {
+        msg: `Payments service call failed: ${(err as Error).message}`,
+        ...taxonomyAttrs(Operation.Error, Target.External),
+        error_message: (err as Error).message,
+      });
+      span.recordException(err as Error);
+      span.setStatus({ code: SpanStatusCode.ERROR });
+      throw err;
+    } finally {
+      span.end();
+    }
+  });
+}
+```
+
+The four steps of `request → main → request external → response external → response main` become four logs, **all under one `trace_id`**, told apart by `span_id` + the taxonomy `target`:
+
+| Flow step | Tag |
+|-----------|-----|
+| request → main service (incoming) | `taxonomyAttrs(Operation.Request, Target.Client)` |
+| → request external | `taxonomyAttrs(Operation.Request, Target.External)` |
+| ← response external | `taxonomyAttrs(Operation.Response, Target.External)` |
+| ← response main service (outgoing) | `taxonomyAttrs(Operation.Response, Target.Client)` |
+
+Then query `where ['attributes.target'] == 'external'` to isolate the external leg, or filter by `trace_id` to read the whole chain in order.
+
+**Zero-code option (NestJS + `@nestjs/axios`):** if the call goes through Nest's `HttpService`, `HttpClientInterceptor.setupInterceptors(httpService)` already logs the outgoing request and response automatically (correlated to their own spans). It uses fixed `operation: 'http_client_*'` strings rather than the `Operation`/`Target` enums — use the manual pattern above when you want the consistent taxonomy view. See [NESTJS.md](NESTJS.md).
+
+**Keeping the trace continuous across the boundary:** the pattern above keeps *your* spans in one trace. To make the *external service* join the same trace, propagate `traceparent` — `@opentelemetry/instrumentation-http` injects it automatically for `http`/`https`/`fetch` outbound calls (register + preload), or inject it manually as shown next. Without propagation the external service starts its own trace; your side is still fully logged, just not stitched to theirs.
+
 ### Propagation for non-instrumented transports (e.g. GCP Pub/Sub)
 
 When no auto-instrumentation exists (Pub/Sub), propagate the context manually so the trace continues across the boundary:
