@@ -25,6 +25,21 @@ There are two layers, and you usually use both:
 
 ---
 
+## What you install
+
+The **core pipeline is bundled** as dependencies — `npm install resilient-otel` gives you traces + logs + metrics over OTLP/HTTP and the scrubber with **no extra installs** (the OTel SDK, the http/protobuf exporters, and `@opentelemetry/api` come with it).
+
+You add packages **only for opt-in features** (declared as optional peer deps, so they're never force-installed):
+
+| Feature | Install |
+|---------|---------|
+| Auto-instrumentation (pg / http / redis / kafka …) | the specific `@opentelemetry/instrumentation-*` (or `@opentelemetry/auto-instrumentations-node`) |
+| gRPC transport | `@opentelemetry/exporter-{trace,logs,metrics}-otlp-grpc` + `@grpc/grpc-js` |
+| NestJS adapter (`resilient-otel/nestjs`) | `@nestjs/common`, `@nestjs/core` (+ `rxjs`) — usually already in a Nest app |
+| Winston bridge | `winston`, `winston-transport` |
+
+> If you `import { trace }`/`metrics` from `@opentelemetry/api` directly for manual instrumentation, also add `@opentelemetry/api` to your own `dependencies` (it's shipped + a peer; explicit is required under pnpm-strict).
+
 ## Compatibility — does every instrumentation work?
 
 **In principle, yes.** `init()` forwards `instrumentations` straight to the standard `NodeSDK` (`registerInstrumentations`), and the scrub processors wrap the SDK's batch exporters — so any OpenTelemetry `Instrumentation` (the `@opentelemetry/instrumentation-*` contrib packages, `auto-instrumentations-node`, `@vercel/otel`, OpenLLMetry, …) is compatible and its telemetry is redacted, correlated, and shut down by the same pipeline. Nothing in this library special-cases or blocks an instrumentation.
