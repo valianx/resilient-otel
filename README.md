@@ -26,7 +26,7 @@ yarn add resilient-otel
 pnpm add resilient-otel
 ```
 
-`@opentelemetry/api` is a peer dependency (so the global API singleton dedupes with your app).
+That single install is **everything** for traces + logs + metrics over OTLP/HTTP and the scrubber — the OTel SDK and `@opentelemetry/api` come bundled. Auto-instrumentation packages (pg, http, …) and gRPC are **opt-in** — see [Auto-instrumentation](#auto-instrumentation-optional) below.
 
 ## Quick Start
 
@@ -36,18 +36,45 @@ import { createScrubber } from 'resilient-otel/scrub';
 
 const handle = await init({
   serviceName: 'my-service',
+  endpoint: 'http://localhost:4318', // your OTel Collector (or set OTEL_EXPORTER_OTLP_ENDPOINT)
   scrubber: createScrubber({ extraDenylist: ['internal_account_id'] }),
 });
+
+// custom spans / logs / metrics work now:
+import { emitLog } from 'resilient-otel';
+emitLog('info', { msg: 'started' });
 
 // flush + shut down telemetry on termination
 process.on('SIGTERM', () => handle.shutdown());
 ```
 
-For automatic HTTP/DB instrumentation, launch with the preload entry (patching must happen before your modules load):
+That's the whole core: manual spans, logs, and metrics export to your Collector, with PII/secrets redacted. **No other packages needed.**
+
+## Auto-instrumentation (optional)
+
+To get spans **automatically** for HTTP, databases, etc., (1) install the OTel instrumentation(s) you use, (2) pass them to `init`, and (3) launch with the preload (patching must happen before your modules load):
 
 ```bash
-node --import resilient-otel/preload ./dist/main.js
+npm install @opentelemetry/instrumentation-http @opentelemetry/instrumentation-pg
 ```
+```typescript
+// instrumentation.ts
+import { init } from 'resilient-otel';
+import { createScrubber } from 'resilient-otel/scrub';
+import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
+import { PgInstrumentation } from '@opentelemetry/instrumentation-pg';
+
+await init({
+  serviceName: 'my-service',
+  scrubber: createScrubber(),
+  instrumentations: [new HttpInstrumentation(), new PgInstrumentation()],
+});
+```
+```bash
+node --import ./dist/instrumentation.js ./dist/main.js
+```
+
+Installing an instrumentation package does **not** activate it — you must register it like above. Full list + queues + manual instrumentation: **[docs/INSTRUMENTATION.md](docs/INSTRUMENTATION.md)**.
 
 ## Environment variables
 
