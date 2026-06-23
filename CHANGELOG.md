@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2]
+
+### Fixed
+- **Sampler now honors the head/ingress decision.** It no longer re-samples not-sampled remote parents (`remoteParentNotSampled` override removed), so a `traceparent` with `…-00` is dropped at every downstream hop — a trace stays consistent across services instead of producing orphaned "loose" spans. Validated by a multi-hop propagation e2e.
+- **Log↔trace correlation uses native fields.** `emitLog` passes the active context so the SDK populates the LogRecord's native `trace_id`/`span_id`; these are no longer duplicated as custom attributes (the OTel/ECS-standard way; backends correlate on the native fields).
+
+### Added
+- `docs/GOVERNANCE.md` — data governance & naming contract (correlation, attribute naming, sampling, redaction).
+
 ## [0.1.1]
 
 ### Fixed

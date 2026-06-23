@@ -1,4 +1,3 @@
-import { context, trace } from '@opentelemetry/api';
 import { executionContext } from '../context/execution-context.js';
 
 /**
@@ -18,14 +17,11 @@ export function enrichWithContext(
 }
 
 function doEnrich(data: Record<string, unknown>): Record<string, unknown> {
-  const currentSpan = trace.getSpan(context.active());
-  const spanCtx = currentSpan?.spanContext();
-
-  const enriched: Record<string, unknown> = {
-    ...data,
-    trace_id: spanCtx?.traceId,
-    span_id: spanCtx?.spanId,
-  };
+  // NOTE: trace_id/span_id are NOT added as attributes here. Log↔trace
+  // correlation uses the LogRecord's native trace fields, which the SDK
+  // populates from the active context (see bridge.ts). Duplicating them as
+  // attributes is non-standard and backends do not correlate on them.
+  const enriched: Record<string, unknown> = { ...data };
 
   const execCtx = executionContext.get();
   if (!execCtx) return enriched;

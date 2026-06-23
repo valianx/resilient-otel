@@ -69,6 +69,7 @@ Full option contract: [docs/CONFIG.md](docs/CONFIG.md).
 - [Configuration](docs/CONFIG.md) — every `init()` / `createScrubber()` option, defaults, and the standard `OTEL_*` fallbacks
 - [Usage guide](docs/USAGE.md) — full `init()`, backends (Collector vs direct-to-vendor), preload ordering, taxonomy
 - [Scrubber](docs/SCRUBBER.md) — redaction, the secret-regex bank, modes, and the boot guard
+- [Governance](docs/GOVERNANCE.md) — naming, trace↔log correlation, sampling, and redaction contract
 - [NestJS](docs/NESTJS.md) — `ObservabilityModule`, interceptors, middlewares, lifecycle
 - [Next.js](docs/NEXTJS.md) — `register()` for `instrumentation.ts` and the proxy/BFF Route Handler
 - [API reference](docs/API.md) — exports per subpath and the TypeScript types

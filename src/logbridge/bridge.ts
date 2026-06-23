@@ -1,5 +1,5 @@
 import { SeverityNumber, type LogRecord, logs } from '@opentelemetry/api-logs';
-import { context, trace } from '@opentelemetry/api';
+import { context } from '@opentelemetry/api';
 import { enrichWithContext } from './enrich.js';
 
 function mapSeverity(level: string): SeverityNumber {
@@ -41,20 +41,20 @@ export function emitLog(
         ? enriched.message
         : JSON.stringify(enriched);
 
-  const currentSpan = trace.getSpan(context.active());
-  const spanCtx = currentSpan?.spanContext();
-
   const record: LogRecord = {
     timestamp: Date.now(),
     observedTimestamp: Date.now(),
     severityNumber: mapSeverity(level),
     severityText: level,
     body,
+    // Pass the active context so the SDK populates the LogRecord's NATIVE
+    // trace_id/span_id fields (the OTel/ECS standard for log↔trace correlation).
+    // We do NOT add trace_id/span_id as attributes — backends correlate on the
+    // native fields, and duplicating them in attributes is non-standard.
+    context: context.active(),
     attributes: {
       ...enriched,
       signal: 'log',
-      trace_id: spanCtx?.traceId,
-      span_id: spanCtx?.spanId,
     },
   };
 
