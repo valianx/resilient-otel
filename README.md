@@ -75,6 +75,7 @@ Full option contract: [docs/CONFIG.md](docs/CONFIG.md).
 - [API reference](docs/API.md) — exports per subpath and the TypeScript types
 - [Migration](docs/MIGRATION.md) — replacing a vendored `observability/` folder
 - [Vision](docs/VISION.md) — what the library is and why it exists
+- [Roadmap](docs/ROADMAP.md) — path to 1.0 and the planned `genai` adapter
 
 ## License
 
