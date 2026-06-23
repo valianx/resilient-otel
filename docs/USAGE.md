@@ -29,6 +29,67 @@ await handle.shutdown();
 
 `init()` is a no-op (no exporters constructed) when `enabled: false` or the standard `OTEL_SDK_DISABLED=true`.
 
+## Stdout console export
+
+Enable `consoleExport: true` to emit each (already-scrubbed) log record to stdout as single-line JSON, in addition to OTLP. Useful for k8s log aggregators that scrape stdout.
+
+```typescript
+const handle = await init({
+  scrubber: createScrubber(),
+  consoleExport: true,  // or set OTEL_RESILIENT_CONSOLE=true in env
+});
+```
+
+The console sink is wired **behind** the single `ScrubLogRecordProcessor` — records are scrubbed exactly once, then fanned out to both OTLP and stdout. You cannot receive an unscrubbed record on stdout through this path.
+
+**Migration note:** if you already hand-roll a `console.log` or Winston console sink, enabling `consoleExport: true` will double-log. Delete the manual sink when enabling.
+
+See [CONFIG.md § consoleExport](CONFIG.md#consoleexport--stdout-record-shape) for the stdout record shape.
+
+## Lean instrumentation surface (opt-in)
+
+Replace the boilerplate `instrumentation.ts` with library-owned defaults:
+
+```typescript
+import { init } from 'resilient-otel';
+import { PII_BODY_FIELDS, SENSITIVE_HEADERS } from './config/redaction.config';
+
+let handle: Awaited<ReturnType<typeof init>> | undefined;
+
+export async function initInstrumentation() {
+  if (handle) return handle;
+  handle = await init({
+    serviceName: process.env.OTEL_SERVICE_NAME ?? 'my-service',
+    protocol: 'grpc',
+    // Library builds + exposes the scrubber; consumer passes only extra fields.
+    scrubberConfig: {
+      mode: (process.env.LOG_SANITIZATION_MODE as 'strict' | 'moderate' | 'disabled') ?? 'strict',
+      extraDenylist: [...PII_BODY_FIELDS, ...SENSITIVE_HEADERS],
+    },
+    // Library owns the pruned default set; extras or ignores are optional.
+    useDefaultInstrumentations: true,
+    ignoreIncomingPaths: [/.*\/health\/status/],
+    // Library registers SIGTERM/SIGINT → flush → exit.
+    gracefulShutdown: true,
+    // Optional: set diag logger level for OTEL internals.
+    diagLogLevel: 'warn',
+  });
+  return handle;
+}
+
+// pass handle.scrubber to ObservabilityModule.forWiring
+export const getScrubber = () => handle?.scrubber;
+```
+
+Each new option is absent-by-default. A consumer that omits all of them sees byte-identical behaviour to 0.1.x.
+
+| Before (0.1.x) | After (0.2.0) |
+|---|---|
+| Explicit `createScrubber()` + thread to two places | `scrubberConfig` + read `handle.scrubber` |
+| ~25 `enabled:false` lines in `getNodeAutoInstrumentations` | `useDefaultInstrumentations: true` |
+| Manual SIGTERM/SIGINT wiring | `gracefulShutdown: true` |
+| Bespoke `HttpInstrumentation({ ignoreIncomingRequestHook })` | `ignoreIncomingPaths: [...]` |
+
 ## Auto-instrumentation ordering (preload)
 
 OpenTelemetry patches libraries at **module-load time**, so the SDK must start before your app imports `http`/`pg`/etc. Launch with the preload entry:

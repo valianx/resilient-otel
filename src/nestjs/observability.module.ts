@@ -8,6 +8,7 @@ import {
 import { APP_INTERCEPTOR } from '@nestjs/core';
 
 import { init } from '../core/init.js';
+import { createScrubber } from '../scrub/scrubber.js';
 import { executionContext } from '../context/execution-context.js';
 import type {
   ResilientOtelConfig,
@@ -139,7 +140,9 @@ export class ObservabilityModule {
           scope: Scope.DEFAULT,
         },
 
-        ...wiringProviders(config.scrubber),
+        // Resolve scrubber for DI wiring. Explicit scrubber wins; fall back to
+        // scrubberConfig. The boot guard in init() will catch missing-scrubber.
+        ...wiringProviders(config.scrubber ?? createScrubber(config.scrubberConfig)),
       ],
       exports: [TelemetryLifecycleService, ...WIRING_EXPORTS],
     };

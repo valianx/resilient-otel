@@ -22,6 +22,49 @@ export class AppModule {}
 
 `forRoot()` takes the same `ResilientOtelConfig` as core `init()` — see [CONFIG.md](CONFIG.md).
 
+## forWiring with scrubberConfig (0.2.0+)
+
+When using the preload pattern (`ObservabilityModule.forWiring`), you can now let `init()` build the scrubber and expose it on the handle instead of calling `createScrubber()` separately:
+
+```typescript
+// instrumentation.ts (preload, runs before app modules load)
+import { init } from 'resilient-otel';
+
+let handle: Awaited<ReturnType<typeof init>> | undefined;
+
+export async function initInstrumentation() {
+  if (handle) return handle;
+  handle = await init({
+    serviceName: 'nest-service',
+    scrubberConfig: {
+      mode: 'strict',
+      extraDenylist: ['tenant_secret'],
+    },
+    useDefaultInstrumentations: true,
+    gracefulShutdown: true,
+  });
+  return handle;
+}
+
+// handle.scrubber is built by init() and ready for forWiring
+export const getScrubber = () => handle?.scrubber;
+```
+
+```typescript
+// app.module.ts
+import { ObservabilityModule } from 'resilient-otel/nestjs';
+import { getScrubber } from './instrumentation';
+
+@Module({
+  imports: [
+    ObservabilityModule.forWiring({ scrubber: getScrubber()! }),
+  ],
+})
+export class AppModule {}
+```
+
+Precedence: explicit `scrubber` field wins over `scrubberConfig`; absent-both still throws the boot guard error.
+
 ## Bootstrap
 
 Enable shutdown hooks so the lifecycle can flush telemetry on `SIGTERM`:

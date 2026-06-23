@@ -19,6 +19,8 @@ export interface OtelEnv {
   samplingRatio: number | undefined;
   /** OTEL_SDK_DISABLED — standard kill-switch */
   sdkDisabled: boolean;
+  /** OTEL_RESILIENT_CONSOLE — opt-in stdout console exporter ('true' | '1') */
+  resilientConsole: boolean;
 }
 
 export function readOtelEnv(): OtelEnv {
@@ -34,6 +36,9 @@ export function readOtelEnv(): OtelEnv {
       ? Math.min(1, Math.max(0, parseFloat(rawSamplingRatio)))
       : undefined;
 
+  const rawConsole = (process.env['OTEL_RESILIENT_CONSOLE'] ?? '').toLowerCase();
+  const resilientConsole = rawConsole === 'true' || rawConsole === '1';
+
   return {
     endpoint: process.env['OTEL_EXPORTER_OTLP_ENDPOINT'],
     protocol,
@@ -41,5 +46,6 @@ export function readOtelEnv(): OtelEnv {
     samplingRatio,
     sdkDisabled:
       (process.env['OTEL_SDK_DISABLED'] ?? '').toLowerCase() === 'true',
+    resilientConsole,
   };
 }

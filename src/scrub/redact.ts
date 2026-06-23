@@ -142,8 +142,12 @@ export function scrubAttrs<T extends Record<string, unknown>>(
 /** Top-level entry: redact denylisted `key=value` pairs and secrets from a single string. */
 export function redactString(
   text: string,
-  options: Pick<RedactOptions, 'secretPatterns' | 'replacement' | 'denylist'>,
+  options: Pick<RedactOptions, 'secretPatterns' | 'replacement' | 'denylist' | 'mode'>,
 ): string {
+  // Mirror the disabled-mode short-circuit in scrubAttrs/scrubValue so that
+  // mode:'disabled' means NO redaction anywhere — attributes AND body text.
+  if (options.mode === 'disabled') return text;
+
   // Secret patterns first (they match structured tokens like `Bearer eyJ…`),
   // then inline denylist `key=value` redaction — otherwise redacting the value
   // after a denylisted key (e.g. `Authorization:`) would break the secret match.

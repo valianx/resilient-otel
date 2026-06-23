@@ -32,8 +32,18 @@ export interface ResilientOtelConfig {
    * The standard `OTEL_SDK_DISABLED=true` env var also forces a no-op.
    */
   enabled?: boolean;
-  /** Required (boot guard, R5). Build with createScrubber() from 'resilient-otel/scrub'. */
-  scrubber: Scrubber;
+  /**
+   * Required unless `scrubberConfig` is provided (boot guard, R5).
+   * Build with createScrubber() from 'resilient-otel/scrub'.
+   * Explicit `scrubber` takes precedence over `scrubberConfig`.
+   */
+  scrubber?: Scrubber;
+  /**
+   * Opt-in: let init() build and expose the scrubber. Ignored when `scrubber` is set.
+   * The built scrubber is available on the returned handle as `handle.scrubber`.
+   * At least one of `scrubber` or `scrubberConfig` must be provided when enabled.
+   */
+  scrubberConfig?: ScrubberConfig;
   /** Service name. Config wins; falls back to OTEL_SERVICE_NAME, then 'unknown-service'. */
   serviceName?: string;
   /** Service version. Default: '0.0.0'. */
@@ -52,10 +62,58 @@ export interface ResilientOtelConfig {
   shutdownTimeoutMs?: number;
   /** Optional instrumentations to pass to NodeSDK. */
   instrumentations?: unknown[];
+  /**
+   * Opt-in: emit each (already-scrubbed) log record to stdout as single-line JSON,
+   * in addition to OTLP. Default: false.
+   * Env fallback: OTEL_RESILIENT_CONSOLE=true (config wins over env).
+   * Resolution order: config.consoleExport → OTEL_RESILIENT_CONSOLE → false.
+   */
+  consoleExport?: boolean;
+  /**
+   * Opt-in: use the library's documented pruned instrumentation allowlist.
+   * When true and no explicit `instrumentations` array is provided, init()
+   * builds the default set (http, express, nestjs-core, pg, ioredis, undici,
+   * runtime-node) via dynamic import of @opentelemetry/auto-instrumentations-node.
+   * Default: false.
+   */
+  useDefaultInstrumentations?: boolean;
+  /**
+   * Extra instrumentations appended to the default set when `useDefaultInstrumentations` is true.
+   * Ignored when an explicit `instrumentations` array is provided.
+   */
+  extraInstrumentations?: unknown[];
+  /**
+   * Instrumentation package names to drop from the default set.
+   * E.g. ['@opentelemetry/instrumentation-pg'] to exclude the pg instrumentation.
+   * Ignored when an explicit `instrumentations` array is provided.
+   */
+  disableInstrumentations?: string[];
+  /**
+   * Opt-in: register SIGTERM/SIGINT handlers that call handle.shutdown() then exit.
+   * Default: false (today's behaviour — consumer wires its own).
+   */
+  gracefulShutdown?: boolean;
+  /**
+   * Incoming request URL patterns to ignore in HTTP tracing (e.g. health checks).
+   * String = substring match; RegExp = test(). Used with `useDefaultInstrumentations: true`.
+   * Ignored when an explicit `instrumentations` array is provided (consumer owns the HTTP
+   * instrumentation in that case); a diag.warn is emitted to inform.
+   */
+  ignoreIncomingPaths?: (string | RegExp)[];
+  /**
+   * Set the OTel diag logger level. Default: 'none' (library does not touch diag).
+   * Options: 'none' | 'error' | 'warn' | 'info' | 'debug'.
+   */
+  diagLogLevel?: 'none' | 'error' | 'warn' | 'info' | 'debug';
 }
 
 export interface ShutdownHandle {
   shutdown(): Promise<void>;
+  /**
+   * Present when init() built the scrubber from `scrubberConfig`.
+   * Pass to ObservabilityModule.forWiring({ scrubber: handle.scrubber }).
+   */
+  scrubber?: Scrubber;
 }
 
 export interface MetricsHandles {

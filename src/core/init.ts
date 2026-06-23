@@ -1,3 +1,4 @@
+import { diag, DiagConsoleLogger, DiagLogLevel } from '@opentelemetry/api';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { resourceFromAttributes } from '@opentelemetry/resources';
 import {
@@ -8,12 +9,14 @@ import {
 import {
   BatchSpanProcessor,
 } from '@opentelemetry/sdk-trace-base';
-import { BatchLogRecordProcessor } from '@opentelemetry/sdk-logs';
+import {
+  BatchLogRecordProcessor,
+  SimpleLogRecordProcessor,
+} from '@opentelemetry/sdk-logs';
 import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
 
 import { readOtelEnv } from '../config/env.js';
-import { scrubberBrand } from '../scrub/scrubber.js';
-import { isNoopScrubber } from '../scrub/scrubber.js';
+import { scrubberBrand, isNoopScrubber, createScrubber } from '../scrub/scrubber.js';
 import {
   ScrubSpanProcessor,
   ScrubLogRecordProcessor,
@@ -23,7 +26,11 @@ import { buildExporters } from './exporters.js';
 import { buildPropagator } from './propagation.js';
 import { buildSampler } from './sampling.js';
 import { buildShutdown } from './shutdown.js';
-import type { ResilientOtelConfig, ShutdownHandle } from '../types/index.js';
+import { ConsoleLogRecordExporter } from './console-exporter.js';
+import { FanOutLogRecordProcessor } from './fanout-processor.js';
+import { registerGracefulShutdown } from './graceful-shutdown.js';
+import { buildDefaultInstrumentations } from './instrumentations.js';
+import type { ResilientOtelConfig, ShutdownHandle, Scrubber } from '../types/index.js';
 
 /** No-op handle returned when observability is disabled. */
 const NOOP_HANDLE: ShutdownHandle = {
@@ -31,10 +38,44 @@ const NOOP_HANDLE: ShutdownHandle = {
 };
 
 /**
+ * Map diagLogLevel config string to the SDK DiagLogLevel enum.
+ */
+function resolveDiagLevel(level: string): DiagLogLevel {
+  switch (level) {
+    case 'error': return DiagLogLevel.ERROR;
+    case 'warn':  return DiagLogLevel.WARN;
+    case 'info':  return DiagLogLevel.INFO;
+    case 'debug': return DiagLogLevel.DEBUG;
+    default:      return DiagLogLevel.NONE;
+  }
+}
+
+/**
+ * Resolve the scrubber from config.scrubber (explicit, wins) or
+ * config.scrubberConfig (built internally). Returns the scrubber and a flag
+ * indicating whether the library built it (so it can be exposed on the handle).
+ */
+function resolveScrubber(
+  config: ResilientOtelConfig,
+): { scrubber: Scrubber; libraryBuilt: boolean } {
+  if (config.scrubber) {
+    return { scrubber: config.scrubber, libraryBuilt: false };
+  }
+  if (config.scrubberConfig) {
+    return { scrubber: createScrubber(config.scrubberConfig), libraryBuilt: true };
+  }
+  // Neither provided — boot guard throws below.
+  throw new Error(
+    '[resilient-otel] init() requires a scrubber when observability is enabled. ' +
+      'Pass scrubber: createScrubber() from resilient-otel/scrub, or scrubberConfig: { ... }.',
+  );
+}
+
+/**
  * Initialize the OpenTelemetry SDK.
  *
  * Boot guard (R5): throws when observability is enabled and:
- *   - config.scrubber is absent, OR
+ *   - neither config.scrubber nor config.scrubberConfig is provided, OR
  *   - config.scrubber is the noopScrubber sentinel.
  *
  * Master switch: returns NOOP_HANDLE when config.enabled === false (default true).
@@ -53,14 +94,16 @@ export async function init(config: ResilientOtelConfig): Promise<ShutdownHandle>
     return NOOP_HANDLE;
   }
 
-  // Boot guard (R5): require a real scrubber when enabled
-  if (!config.scrubber) {
-    throw new Error(
-      '[resilient-otel] init() requires a scrubber when observability is enabled. ' +
-        'Pass scrubber: createScrubber() from resilient-otel/scrub.',
-    );
+  // Optional: wire the OTel diag logger before any SDK construction.
+  if (config.diagLogLevel && config.diagLogLevel !== 'none') {
+    diag.setLogger(new DiagConsoleLogger(), resolveDiagLevel(config.diagLogLevel));
   }
-  if (!(scrubberBrand in config.scrubber) || isNoopScrubber(config.scrubber)) {
+
+  // Boot guard (R5): require a real scrubber when enabled.
+  // resolveScrubber throws when neither scrubber nor scrubberConfig is set.
+  const { scrubber, libraryBuilt } = resolveScrubber(config);
+
+  if (!(scrubberBrand in scrubber) || isNoopScrubber(scrubber)) {
     throw new Error(
       '[resilient-otel] noopScrubber is not a valid scrubber for production. ' +
         'Pass scrubber: createScrubber() from resilient-otel/scrub.',
@@ -97,14 +140,27 @@ export async function init(config: ResilientOtelConfig): Promise<ShutdownHandle>
   });
   const scrubSpanProcessor = new ScrubSpanProcessor(
     batchSpanProcessor,
-    config.scrubber,
+    scrubber,
   );
 
+  // Resolve whether console export is enabled.
+  // Resolution order: config.consoleExport → OTEL_RESILIENT_CONSOLE → false
+  const consoleEnabled =
+    config.consoleExport === true ||
+    (config.consoleExport == null && env.resilientConsole);
+
+  // Build the log processor chain.
+  // When console is enabled: scrub → fanout(batch + console-simple).
+  // When console is disabled (default): scrub → batch (identical to today).
   const batchLogProcessor = new BatchLogRecordProcessor(logExporter);
-  const scrubLogProcessor = new ScrubLogRecordProcessor(
-    batchLogProcessor,
-    config.scrubber,
-  );
+  const logDownstream = consoleEnabled
+    ? new FanOutLogRecordProcessor([
+        batchLogProcessor,
+        new SimpleLogRecordProcessor(new ConsoleLogRecordExporter()),
+      ])
+    : batchLogProcessor;
+
+  const scrubLogProcessor = new ScrubLogRecordProcessor(logDownstream, scrubber);
 
   // Periodic metric reader (60s export interval — recipe §7).
   const metricReader = new PeriodicExportingMetricReader({
@@ -112,6 +168,28 @@ export async function init(config: ResilientOtelConfig): Promise<ShutdownHandle>
     exportIntervalMillis: 60_000,
     exportTimeoutMillis: 30_000,
   });
+
+  // Resolve instrumentations.
+  // Precedence: explicit config.instrumentations wins → useDefaultInstrumentations builder → [].
+  let instrumentations: unknown[];
+  if (config.instrumentations) {
+    // Explicit array always wins — consumer owns instrumentation fully.
+    if (config.ignoreIncomingPaths?.length) {
+      diag.warn(
+        '[resilient-otel] ignoreIncomingPaths is ignored when an explicit instrumentations array is provided. ' +
+          'Wire ignoreIncomingRequestHook directly on HttpInstrumentation.',
+      );
+    }
+    instrumentations = config.instrumentations;
+  } else if (config.useDefaultInstrumentations) {
+    instrumentations = await buildDefaultInstrumentations({
+      extraInstrumentations: config.extraInstrumentations,
+      disableInstrumentations: config.disableInstrumentations,
+      ignoreIncomingPaths: config.ignoreIncomingPaths,
+    });
+  } else {
+    instrumentations = [];
+  }
 
   // NodeSDK owns all three signals, wired with OUR scrub-wrapped processors and
   // metric reader. Passing them explicitly makes NodeSDK use them (and the
@@ -129,11 +207,24 @@ export async function init(config: ResilientOtelConfig): Promise<ShutdownHandle>
     sampler: buildSampler(samplingRatio),
     textMapPropagator: buildPropagator(),
     instrumentations:
-      (config.instrumentations as NonNullable<
+      (instrumentations as NonNullable<
         ConstructorParameters<typeof NodeSDK>[0]
       >['instrumentations']) ?? [],
   });
   sdk.start();
 
-  return buildShutdown({ sdk }, timeoutMs);
+  const handle = buildShutdown({ sdk }, timeoutMs);
+
+  // Expose the library-built scrubber on the handle so the consumer can pass
+  // it to ObservabilityModule.forWiring({ scrubber: handle.scrubber }).
+  if (libraryBuilt) {
+    (handle as { scrubber?: Scrubber }).scrubber = scrubber;
+  }
+
+  // Register SIGTERM/SIGINT handlers when the consumer opts in.
+  if (config.gracefulShutdown) {
+    registerGracefulShutdown(handle);
+  }
+
+  return handle;
 }

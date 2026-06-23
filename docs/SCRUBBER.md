@@ -46,7 +46,13 @@ Redaction is wired into the SDK as a `ScrubSpanProcessor` + `ScrubLogRecordProce
 
 ## Boot guard
 
-`init()` throws when enabled (the default) and the scrubber is absent or is the `noopScrubber` sentinel, preventing accidental shipment of PII to the collector. `noopScrubber` exists only for testing the guard.
+`init()` throws when enabled (the default) and neither `scrubber` nor `scrubberConfig` is provided (or the provided `scrubber` is the `noopScrubber` sentinel). This prevents accidental shipment of PII to the collector. `noopScrubber` exists only for testing the guard.
+
+## Disabled-mode contract
+
+`mode: 'disabled'` short-circuits all redaction — both attribute scrubbing (`scrubAttrs`) and body-text redaction (`redactString`). A disabled scrubber passes every value, including sensitive attributes and inline `key=value` patterns in body text, to **every downstream sink** unchanged — including the stdout console sink when `consoleExport: true`.
+
+There is no separate code path; both sinks inherit disabled-mode behaviour because they share the single scrub stage. Use `mode: 'disabled'` only in local development where PII exposure is acceptable.
 
 ## Database statement PII
 
