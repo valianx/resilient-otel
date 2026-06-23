@@ -14,7 +14,11 @@ import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
 import { readOtelEnv } from '../config/env.js';
 import { scrubberBrand } from '../scrub/scrubber.js';
 import { isNoopScrubber } from '../scrub/scrubber.js';
-import { ScrubSpanProcessor, ScrubLogRecordProcessor } from '../scrub/processors.js';
+import {
+  ScrubSpanProcessor,
+  ScrubLogRecordProcessor,
+  SignalSpanProcessor,
+} from '../scrub/processors.js';
 import { buildExporters } from './exporters.js';
 import { buildPropagator } from './propagation.js';
 import { buildSampler } from './sampling.js';
@@ -119,7 +123,7 @@ export async function init(config: ResilientOtelConfig): Promise<ShutdownHandle>
   // which previously let unscrubbed logs leak. One owner only.
   const sdk = new NodeSDK({
     resource,
-    spanProcessors: [scrubSpanProcessor],
+    spanProcessors: [new SignalSpanProcessor(), scrubSpanProcessor],
     logRecordProcessors: [scrubLogProcessor],
     metricReaders: [metricReader],
     sampler: buildSampler(samplingRatio),

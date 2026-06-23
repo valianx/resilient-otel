@@ -9,6 +9,32 @@ import type {
   SdkLogRecord,
 } from '@opentelemetry/sdk-logs';
 import type { Scrubber } from '../types/index.js';
+import { SIGNAL_TAG_TRACE } from '../taxonomy/taxonomy.js';
+
+/**
+ * SignalSpanProcessor — tags every span with `signal: 'trace'` at start, making
+ * traces symmetric with the log bridge (which stamps `signal: 'log'`). One
+ * `where ['attributes.signal'] == 'trace'` query then partitions all telemetry
+ * by signal (recipe §11.7). Single-responsibility: tagging only, no export — it
+ * sits in front of the scrub/batch chain in the SDK's span-processor list.
+ */
+export class SignalSpanProcessor implements SpanProcessor {
+  onStart(span: Span): void {
+    span.setAttribute('signal', SIGNAL_TAG_TRACE);
+  }
+
+  onEnd(): void {
+    // no-op — tagging happens at start
+  }
+
+  forceFlush(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  shutdown(): Promise<void> {
+    return Promise.resolve();
+  }
+}
 
 /**
  * ScrubSpanProcessor — wraps a downstream SpanProcessor and redacts PII/secrets

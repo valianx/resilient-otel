@@ -12,9 +12,11 @@
 6. **API + governance frozen** — `docs/GOVERNANCE.md` final, docs match behavior.
 
 ### Known issues (must reach zero before 1.0)
-- Spans are not tagged `signal: 'trace'`, so `where signal == 'trace'` is asymmetric with logs.
-- The AsyncLocalStorage execution-context is a per-bundle singleton (cross-bundle) — context enrichment may be empty in the NestJS adapter.
-- `nestjs/http-client.interceptor` still injects `trace_id`/`span_id` — needs the same native-correlation audit as the log bridge.
+- ✅ **Resolved in 0.1.3** — Spans are now tagged `signal: 'trace'` by `SignalSpanProcessor`, symmetric with logs' `signal: 'log'`. Validated e2e.
+- ✅ **Resolved in 0.1.3** — The AsyncLocalStorage execution-context is now a process-wide singleton keyed on `globalThis`/`Symbol.for`, shared across the core/scrub/nestjs bundles.
+- ✅ **Resolved in 0.1.3** — `nestjs/http-client.interceptor` no longer injects `trace_id`/`span_id` as custom attributes; it emits inside the span's context for native correlation.
+
+All three known issues are at zero as of 0.1.3.
 
 ### Deferred
 - **Next.js e2e** — the second consumer suite (App Router proxy/BFF). Deferred while we harden NestJS first.

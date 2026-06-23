@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3]
+
+### Fixed
+- **Spans now carry `signal: 'trace'`.** A new `SignalSpanProcessor` tags every span at start, making traces symmetric with logs (`signal: 'log'`) so `where ['attributes.signal'] == 'trace'` partitions telemetry by signal. Validated e2e.
+- **AsyncLocalStorage execution-context is now a process-wide singleton.** It was a per-bundle module singleton, so a context opened by the NestJS adapter was invisible to the core log bridge and enrichment came back empty. The store is now keyed on `globalThis` via `Symbol.for`, shared across the core/scrub/nestjs bundles (same fix family as the scrubber brand and the log bridge).
+- **`nestjs/http-client.interceptor` no longer injects `trace_id`/`span_id` as custom attributes.** It emits each log inside the relevant span's context, so the SDK stamps the native `trace_id`/`span_id` — completing the native-correlation audit started for the log bridge in 0.1.2.
+
+These resolve the three known issues tracked in `docs/ROADMAP.md`; they are now at zero.
+
 ## [0.1.2]
 
 ### Fixed

@@ -29,6 +29,13 @@ export enum Target {
 export const SIGNAL_TAG = 'log';
 
 /**
+ * Signal tag for spans — recipe §11.7. Set automatically on every span by the
+ * SDK pipeline so traces are symmetric with logs (`signal: 'log'`) and the same
+ * `where ['attributes.signal'] == 'trace'` query partitions telemetry by signal.
+ */
+export const SIGNAL_TAG_TRACE = 'trace';
+
+/**
  * Attach standard taxonomy attributes to a span/log attributes record.
  * Uses the recipe's bare `operation` / `target` keys so the documented APL
  * queries (e.g. `where ['attributes.operation'] == 'error'`) work verbatim.

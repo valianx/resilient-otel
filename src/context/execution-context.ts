@@ -31,7 +31,19 @@ function createALS(): ALS<ExecutionCtx> | null {
   }
 }
 
-const storage = createALS();
+// R4b: the AsyncLocalStorage instance must be a process-wide singleton shared
+// across every bundle copy of this module. The core, scrub, and nestjs subpaths
+// are built as separate tsup bundles, so a module-level `const` would give each
+// bundle its own store — a context opened by the NestJS adapter would then be
+// invisible to the log bridge in the core bundle, and enrichment would come back
+// empty. Key it on globalThis via Symbol.for so all copies converge on one ALS.
+const ALS_KEY = Symbol.for('resilient-otel.execution-context.als');
+
+function storage(): ALS<ExecutionCtx> | null {
+  const g = globalThis as unknown as Record<symbol, ALS<ExecutionCtx> | null>;
+  if (!(ALS_KEY in g)) g[ALS_KEY] = createALS();
+  return g[ALS_KEY];
+}
 
 function generateExecutionId(): string {
   // UUID v4 approximation without external deps
@@ -53,26 +65,28 @@ export const executionContext = {
    * Returns the callback's return value.
    */
   run<T>(ctx: ExecutionCtx, callback: () => T): T {
-    if (!storage) return callback();
-    return storage.run(ctx, callback);
+    const s = storage();
+    if (!s) return callback();
+    return s.run(ctx, callback);
   },
 
   /**
    * Async variant of `run`.
    */
   async runAsync<T>(ctx: ExecutionCtx, callback: () => Promise<T>): Promise<T> {
-    if (!storage) return callback();
-    return storage.run(ctx, callback);
+    const s = storage();
+    if (!s) return callback();
+    return s.run(ctx, callback);
   },
 
   /** Get the current execution context, or undefined if none is active. */
   get(): ExecutionCtx | undefined {
-    return storage?.getStore();
+    return storage()?.getStore();
   },
 
   /** Get the current context, throw if none is active. */
   getOrThrow(): ExecutionCtx {
-    const ctx = storage?.getStore();
+    const ctx = storage()?.getStore();
     if (!ctx) {
       throw new Error(
         'No execution context found. Ensure the request runs inside executionContext.run().',
@@ -83,18 +97,18 @@ export const executionContext = {
 
   /** Update the current context with a partial patch. */
   update(updates: Partial<ExecutionCtx>): void {
-    const current = storage?.getStore();
+    const current = storage()?.getStore();
     if (current) Object.assign(current, updates);
   },
 
   /** Get a single key from the current context. */
   getValue<K extends keyof ExecutionCtx>(key: K): ExecutionCtx[K] | undefined {
-    return storage?.getStore()?.[key];
+    return storage()?.getStore()?.[key];
   },
 
   /** Check whether a context is active in the current async scope. */
   hasContext(): boolean {
-    return storage?.getStore() !== undefined;
+    return storage()?.getStore() !== undefined;
   },
 
   /**
@@ -115,7 +129,7 @@ export const executionContext = {
 
   /** Serialise current context to a plain log-safe record. */
   toLogObject(): Record<string, unknown> {
-    const ctx = storage?.getStore();
+    const ctx = storage()?.getStore();
     if (!ctx) return {};
     return {
       execution_id: ctx.executionId,

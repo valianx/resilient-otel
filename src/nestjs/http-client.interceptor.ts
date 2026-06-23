@@ -56,13 +56,12 @@ export class HttpClientInterceptor {
         return config;
       },
       (error: unknown) => {
-        const { traceId, spanId } = this.getTraceContext();
+        // Native correlation: emitLog stamps trace_id/span_id from the active
+        // span automatically — no custom attributes needed.
         emitLog('error', {
           operation: 'http_client_request_error',
           msg: 'Error preparing HTTP request',
           error_message: String((error as { message?: string }).message ?? error),
-          trace_id: traceId,
-          span_id: spanId,
         });
         return Promise.reject(error);
       },
@@ -80,15 +79,6 @@ export class HttpClientInterceptor {
     );
   }
 
-  private getTraceContext(): { traceId: string; spanId: string } {
-    const currentSpan = trace.getSpan(context.active());
-    if (currentSpan) {
-      const spanCtx = currentSpan.spanContext();
-      return { traceId: spanCtx.traceId, spanId: spanCtx.spanId };
-    }
-    return { traceId: '', spanId: '' };
-  }
-
   private logRequest(config: AxiosRequestConfig): void {
     const { method, url } = config;
     const tracer = trace.getTracer('resilient-otel');
@@ -101,22 +91,23 @@ export class HttpClientInterceptor {
         },
       },
     );
-    const spanCtx = span.spanContext();
-    emitLog('info', {
-      operation: 'http_client_request',
-      msg: `Outgoing HTTP request: ${method?.toUpperCase()} ${url}`,
-      http_method: method?.toUpperCase(),
-      http_url: url,
-      direction: 'outgoing',
-      trace_id: spanCtx.traceId,
-      span_id: spanCtx.spanId,
+    // Emit inside the span's context so emitLog correlates the log to THIS
+    // span via native trace_id/span_id (no custom ID attributes).
+    context.with(trace.setSpan(context.active(), span), () => {
+      emitLog('info', {
+        operation: 'http_client_request',
+        msg: `Outgoing HTTP request: ${method?.toUpperCase()} ${url}`,
+        http_method: method?.toUpperCase(),
+        http_url: url,
+        direction: 'outgoing',
+      });
     });
     span.end();
   }
 
   private logResponse(response: AxiosResponse): void {
     const { status, statusText, config } = response;
-    const { traceId, spanId } = this.getTraceContext();
+    // Native correlation: emitLog stamps trace_id/span_id from the active span.
     emitLog('info', {
       operation: 'http_client_response',
       msg: `HTTP response received: ${status} from ${config.method?.toUpperCase()} ${config.url}`,
@@ -125,8 +116,6 @@ export class HttpClientInterceptor {
       status_code: status,
       status_text: statusText,
       direction: 'incoming',
-      trace_id: traceId,
-      span_id: spanId,
     });
   }
 
@@ -149,18 +138,18 @@ export class HttpClientInterceptor {
       },
     });
     span.setStatus({ code: SpanStatusCode.ERROR, message });
-    const spanCtx = span.spanContext();
-    emitLog('error', {
-      operation: 'http_client_error',
-      msg: `HTTP request failed: ${message}`,
-      http_method: config?.method?.toUpperCase(),
-      http_url: config?.url,
-      status_code: response?.status,
-      status_text: response?.statusText,
-      error_message: message,
-      direction: 'error',
-      trace_id: spanCtx.traceId,
-      span_id: spanCtx.spanId,
+    // Emit inside the span's context for native trace correlation.
+    context.with(trace.setSpan(context.active(), span), () => {
+      emitLog('error', {
+        operation: 'http_client_error',
+        msg: `HTTP request failed: ${message}`,
+        http_method: config?.method?.toUpperCase(),
+        http_url: config?.url,
+        status_code: response?.status,
+        status_text: response?.statusText,
+        error_message: message,
+        direction: 'error',
+      });
     });
     span.end();
   }
