@@ -26,7 +26,7 @@ yarn add resilient-otel
 pnpm add resilient-otel
 ```
 
-That single install is **everything** for traces + logs + metrics over OTLP/HTTP and the scrubber — the OTel SDK and `@opentelemetry/api` come bundled. Auto-instrumentation packages (pg, http, …) and gRPC are **opt-in** — see [Auto-instrumentation](#auto-instrumentation-optional) below.
+That single install is **everything** for traces + logs + metrics over OTLP/HTTP and the scrubber — the OTel SDK and `@opentelemetry/api` come bundled. Extras (auto-instrumentation, gRPC, Winston, NestJS) are **opt-in** — each is one install + one wiring step, all in **[docs/EXTRAS.md](docs/EXTRAS.md)**. The most common one (auto-instrumentation) is also shown [below](#auto-instrumentation-optional).
 
 ## Quick Start
 
@@ -94,6 +94,7 @@ Full option contract: [docs/CONFIG.md](docs/CONFIG.md).
 ## Documentation
 
 - [Configuration](docs/CONFIG.md) — every `init()` / `createScrubber()` option, defaults, and the standard `OTEL_*` fallbacks
+- [Optional dependencies](docs/EXTRAS.md) — enabling auto-instrumentation, gRPC, Winston, and NestJS (what to install + how to wire each)
 - [Usage guide](docs/USAGE.md) — full `init()`, backends (Collector vs direct-to-vendor), preload ordering, taxonomy
 - [Instrumentation](docs/INSTRUMENTATION.md) — use cases, activating auto-instrumentation, manual spans/logs/metrics
 - [Scrubber](docs/SCRUBBER.md) — redaction, the secret-regex bank, modes, and the boot guard
