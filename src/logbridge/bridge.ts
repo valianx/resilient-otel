@@ -1,16 +1,6 @@
-import { SeverityNumber, type LogRecord } from '@opentelemetry/api-logs';
+import { SeverityNumber, type LogRecord, logs } from '@opentelemetry/api-logs';
 import { context, trace } from '@opentelemetry/api';
 import { enrichWithContext } from './enrich.js';
-
-// Lazy reference to the LoggerProvider set by init()
-let _getLogger: (() => import('@opentelemetry/api-logs').Logger) | null = null;
-
-/** Called by init() to wire the log bridge to the SDK's LoggerProvider. */
-export function setLogBridge(
-  getLogger: () => import('@opentelemetry/api-logs').Logger,
-): void {
-  _getLogger = getLogger;
-}
 
 function mapSeverity(level: string): SeverityNumber {
   switch (level.toLowerCase()) {
@@ -33,8 +23,11 @@ function mapSeverity(level: string): SeverityNumber {
  * Emit a log record through the OTel Logs Bridge API.
  * Enriches with trace + execution context before emission.
  *
- * Falls back to console.error/warn/log/debug when no bridge is wired
- * (i.e., before init() is called or when observability is disabled).
+ * Uses the GLOBAL logs API (`logs.getLogger`) rather than a module-level
+ * reference, so it works across bundle boundaries — `init()` (which may live in
+ * a different subpath bundle, e.g. /nestjs) registers the global LoggerProvider,
+ * and this picks it up. Before init (or when observability is disabled) the
+ * global logger is a no-op, so emitLog() is a safe no-op too.
  */
 export function emitLog(
   level: string,
@@ -47,11 +40,6 @@ export function emitLog(
       : typeof enriched.message === 'string'
         ? enriched.message
         : JSON.stringify(enriched);
-
-  if (!_getLogger) {
-    // No-op bridge: observability disabled or not yet initialized
-    return;
-  }
 
   const currentSpan = trace.getSpan(context.active());
   const spanCtx = currentSpan?.spanContext();
@@ -70,5 +58,5 @@ export function emitLog(
     },
   };
 
-  _getLogger().emit(record);
+  logs.getLogger('resilient-otel').emit(record);
 }

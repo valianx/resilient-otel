@@ -62,19 +62,31 @@ export class ScrubLogRecordProcessor implements LogRecordProcessor {
   ) {}
 
   onEmit(record: SdkLogRecord, context?: Context): void {
-    // Redact attributes
+    // SdkLogRecord exposes `attributes`/`body` as readonly; in-place mutation
+    // does NOT reach the exporter (unlike ReadableSpan). Use the record's own
+    // setAttributes()/setBody() mutators so the redaction is actually applied.
+    const mutable = record as SdkLogRecord & {
+      setAttributes?: (attrs: Record<string, unknown>) => unknown;
+      setBody?: (body: unknown) => unknown;
+    };
+
     if (record.attributes) {
-      const attrs = record.attributes as Record<string, unknown>;
-      const scrubbed = this.scrubber.scrubAttrs(attrs);
-      for (const key of Object.keys(attrs)) {
-        delete attrs[key];
+      const scrubbed = this.scrubber.scrubAttrs({
+        ...(record.attributes as Record<string, unknown>),
+      });
+      if (typeof mutable.setAttributes === 'function') {
+        mutable.setAttributes(scrubbed);
+      } else {
+        const attrs = record.attributes as Record<string, unknown>;
+        for (const key of Object.keys(attrs)) delete attrs[key];
+        Object.assign(attrs, scrubbed);
       }
-      Object.assign(attrs, scrubbed);
     }
 
-    // Redact the body if it is a string
     if (typeof record.body === 'string') {
-      (record as { body: unknown }).body = this.scrubber.redact(record.body);
+      const redacted = this.scrubber.redact(record.body);
+      if (typeof mutable.setBody === 'function') mutable.setBody(redacted);
+      else (record as { body: unknown }).body = redacted;
     }
 
     this.downstream.onEmit(record, context);

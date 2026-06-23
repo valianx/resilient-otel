@@ -1,7 +1,10 @@
 // Brand symbol for the scrubber boot guard (R5).
-// Canonical single source so the interface and the implementation reference
-// the same `unique symbol`.
-export const scrubberBrand: unique symbol = Symbol('resilient-otel.scrubber');
+// MUST be a GLOBAL registered symbol (Symbol.for), not Symbol(): createScrubber
+// lives in the /scrub bundle while init()'s boot guard lives in /core (and is
+// re-bundled into /nestjs). Those are separate tsup bundles, so a plain Symbol()
+// would differ across copies and the guard would falsely reject a real scrubber.
+// Symbol.for() returns the same symbol across every bundle/realm.
+export const scrubberBrand: unique symbol = Symbol.for('resilient-otel.scrubber');
 
 export interface Scrubber {
   redact(text: string): string;

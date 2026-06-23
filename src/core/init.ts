@@ -8,14 +8,8 @@ import {
 import {
   BatchSpanProcessor,
 } from '@opentelemetry/sdk-trace-base';
-import {
-  LoggerProvider,
-  BatchLogRecordProcessor,
-} from '@opentelemetry/sdk-logs';
-import {
-  MeterProvider,
-  PeriodicExportingMetricReader,
-} from '@opentelemetry/sdk-metrics';
+import { BatchLogRecordProcessor } from '@opentelemetry/sdk-logs';
+import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
 
 import { readOtelEnv } from '../config/env.js';
 import { scrubberBrand } from '../scrub/scrubber.js';
@@ -25,7 +19,6 @@ import { buildExporters } from './exporters.js';
 import { buildPropagator } from './propagation.js';
 import { buildSampler } from './sampling.js';
 import { buildShutdown } from './shutdown.js';
-import { setLogBridge } from '../logbridge/bridge.js';
 import type { ResilientOtelConfig, ShutdownHandle } from '../types/index.js';
 
 /** No-op handle returned when observability is disabled. */
@@ -109,24 +102,21 @@ export async function init(config: ResilientOtelConfig): Promise<ShutdownHandle>
     config.scrubber,
   );
 
-  // Build LoggerProvider with SDK 2.x constructor — NO addLogRecordProcessor
-  const loggerProvider = new LoggerProvider({
-    resource,
-    processors: [scrubLogProcessor],
-  });
-
-  // Build MeterProvider with periodic reader (60s export interval — recipe §7)
+  // Periodic metric reader (60s export interval — recipe §7).
   const metricReader = new PeriodicExportingMetricReader({
     exporter: metricExporter,
     exportIntervalMillis: 60_000,
     exportTimeoutMillis: 30_000,
   });
-  const meterProvider = new MeterProvider({
-    resource,
-    readers: [metricReader],
-  });
 
-  // Build NodeSDK with SDK 2.x plural options
+  // NodeSDK owns all three signals, wired with OUR scrub-wrapped processors and
+  // metric reader. Passing them explicitly makes NodeSDK use them (and the
+  // scrubber) and register the global tracer/logger/meter providers — so
+  // emitLog()/logs.getLogger() and metrics.getMeter() reach the SCRUBBED
+  // pipeline. We must NOT also build standalone Logger/Meter providers: when
+  // OTEL_EXPORTER_OTLP_ENDPOINT is set, NodeSDK already registers global
+  // providers and a second setGlobal*Provider() call is silently ignored —
+  // which previously let unscrubbed logs leak. One owner only.
   const sdk = new NodeSDK({
     resource,
     spanProcessors: [scrubSpanProcessor],
@@ -139,19 +129,7 @@ export async function init(config: ResilientOtelConfig): Promise<ShutdownHandle>
         ConstructorParameters<typeof NodeSDK>[0]
       >['instrumentations']) ?? [],
   });
-
   sdk.start();
 
-  // Wire the log bridge so emitLog() has a logger
-  setLogBridge(() => loggerProvider.getLogger('resilient-otel'));
-
-  return buildShutdown(
-    {
-      sdk,
-      loggerProvider,
-      meterProvider,
-      spanProcessor: scrubSpanProcessor,
-    },
-    timeoutMs,
-  );
+  return buildShutdown({ sdk }, timeoutMs);
 }

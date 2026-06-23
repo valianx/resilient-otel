@@ -39,12 +39,27 @@ export async function buildExporters(
   return buildProtoExporters(opts);
 }
 
+/**
+ * For OTLP/HTTP, the exporter `url` is the COMPLETE signal URL — it does NOT
+ * append `/v1/<signal>` (only the OTEL_EXPORTER_OTLP_ENDPOINT *env var* does).
+ * So when an endpoint is given as config we append the per-signal path
+ * ourselves; this is correct for a local Collector and for vendors (Axiom, etc).
+ * When endpoint is undefined the exporter falls back to its own localhost default.
+ */
+function signalUrl(
+  endpoint: string | undefined,
+  signal: 'traces' | 'logs' | 'metrics',
+): string | undefined {
+  if (!endpoint) return undefined;
+  return `${endpoint.replace(/\/+$/, '')}/v1/${signal}`;
+}
+
 function buildProtoExporters(opts: ExporterOptions): OtelExporters {
-  const baseOpts = { url: opts.endpoint, headers: resolveHeaders(opts.headers) };
+  const headers = resolveHeaders(opts.headers);
   return {
-    traceExporter: new OTLPTraceExporter(baseOpts),
-    logExporter: new OTLPLogExporter(baseOpts),
-    metricExporter: new OTLPMetricExporter(baseOpts),
+    traceExporter: new OTLPTraceExporter({ url: signalUrl(opts.endpoint, 'traces'), headers }),
+    logExporter: new OTLPLogExporter({ url: signalUrl(opts.endpoint, 'logs'), headers }),
+    metricExporter: new OTLPMetricExporter({ url: signalUrl(opts.endpoint, 'metrics'), headers }),
   };
 }
 

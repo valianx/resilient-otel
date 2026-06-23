@@ -1,6 +1,6 @@
 {
   "name": "resilient-otel",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "packageManager": "pnpm@9.15.9",
   "description": "Framework-agnostic OpenTelemetry library: SDK init, extensible PII scrubber, taxonomy, metrics, log bridge, and NestJS adapter.",
   "author": "valianx",
