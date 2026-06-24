@@ -76,6 +76,41 @@ node --import ./dist/instrumentation.js ./dist/main.js
 
 Installing an instrumentation package does **not** activate it — you must register it like above. Full list + queues + manual instrumentation: **[docs/INSTRUMENTATION.md](docs/INSTRUMENTATION.md)**.
 
+## Elastic-safe log attributes (default-on)
+
+Elastic Cloud and Elasticsearch do not index nested objects in log attributes — they must be flat scalars or JSON strings. The library serializes complex attribute values to JSON strings **by default**, making every `emitLog()` call Elastic-safe without any changes in your application code.
+
+**What is serialized:** the named set `{ body, headers, metadata, error, exception }` plus any other non-array object attribute (catch-all). Scalars, arrays, already-stringified strings, `signal: 'log'`, and the native `trace_id`/`span_id` are untouched.
+
+**Security ordering:** serialization runs strictly **after** the scrubber, so structural PII redaction (e.g. `body.password → '[REDACTED]'`) is always applied before the object is turned into a string. This ordering is enforced in the pipeline — it cannot be reversed.
+
+**Native trace correlation is preserved:** the library does NOT add `trace_id`/`span_id` as custom attributes. Correlation uses the OTel-standard native `LogRecord` trace fields (`trace.id` in Elastic), which the SDK populates automatically from the active span context.
+
+**To opt out** (non-Elastic backends that can consume nested objects natively):
+
+```typescript
+// Option A — config field (permanent, per-instance)
+const handle = await init({
+  serviceName: 'my-service',
+  scrubberConfig: { mode: 'moderate' },
+  serializeComplexAttributes: false, // disable Elastic serialization
+});
+```
+
+```bash
+# Option B — env var (override per deployment)
+OTEL_RESILIENT_SERIALIZE_ATTRS=false node dist/main.js
+```
+
+The opt-out does not affect PII redaction — the scrubber always runs regardless of this flag.
+
+> **Contraindication — `mode: 'disabled'` + serialization:**
+> Using `scrubberConfig: { mode: 'disabled' }` together with serialization enabled means nested PII
+> (e.g. `body.password`) is exported as a fully-indexed JSON string **without redaction**. The library
+> emits a `diag.warn` at startup when this combination is detected. If you are using `mode: 'disabled'`
+> intentionally (e.g. dev testing), either also set `serializeComplexAttributes: false` or accept that
+> attribute contents are exported verbatim.
+
 ## Environment variables
 
 The library is config-first and reads **no env vars of its own** — every option is a field on `init()`. The only env vars involved are the **standard OpenTelemetry `OTEL_*`** ones, read natively by the underlying SDK. They act as fallbacks when the matching config field is omitted (config always wins):
@@ -88,6 +123,8 @@ The library is config-first and reads **no env vars of its own** — every optio
 | `OTEL_RESOURCE_ATTRIBUTES` | resource attributes | `deployment.environment=production` |
 | `OTEL_TRACES_SAMPLER_ARG` | `samplingRatio` | `1.0` |
 | `OTEL_SDK_DISABLED` | kill-switch (`true` → no-op) | `true` |
+| `OTEL_RESILIENT_CONSOLE` | `consoleExport` | `true` |
+| `OTEL_RESILIENT_SERIALIZE_ATTRS` | `serializeComplexAttributes` opt-out | `false` |
 
 Full option contract: [docs/CONFIG.md](docs/CONFIG.md).
 

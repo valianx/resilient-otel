@@ -21,6 +21,13 @@ export interface OtelEnv {
   sdkDisabled: boolean;
   /** OTEL_RESILIENT_CONSOLE — opt-in stdout console exporter ('true' | '1') */
   resilientConsole: boolean;
+  /**
+   * OTEL_RESILIENT_SERIALIZE_ATTRS — opt-out attribute serialization.
+   * Set to 'false' or '0' to disable; unset = serialization ON (default-on).
+   * The resolved value is used as fallback when config.serializeComplexAttributes
+   * is not explicitly set (config always wins over env).
+   */
+  serializeAttrs: boolean;
 }
 
 export function readOtelEnv(): OtelEnv {
@@ -39,6 +46,13 @@ export function readOtelEnv(): OtelEnv {
   const rawConsole = (process.env['OTEL_RESILIENT_CONSOLE'] ?? '').toLowerCase();
   const resilientConsole = rawConsole === 'true' || rawConsole === '1';
 
+  // Opt-out: 'false' or '0' disables serialization; anything else (including
+  // unset) leaves it enabled (default-on mirrors the Zippy Elastic standard).
+  const rawSerialize = (
+    process.env['OTEL_RESILIENT_SERIALIZE_ATTRS'] ?? ''
+  ).toLowerCase();
+  const serializeAttrs = rawSerialize !== 'false' && rawSerialize !== '0';
+
   return {
     endpoint: process.env['OTEL_EXPORTER_OTLP_ENDPOINT'],
     protocol,
@@ -47,5 +61,6 @@ export function readOtelEnv(): OtelEnv {
     sdkDisabled:
       (process.env['OTEL_SDK_DISABLED'] ?? '').toLowerCase() === 'true',
     resilientConsole,
+    serializeAttrs,
   };
 }
