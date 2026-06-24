@@ -7,8 +7,9 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
-import { trace, SpanStatusCode, context } from '@opentelemetry/api';
+import { trace, SpanStatusCode, context, diag } from '@opentelemetry/api';
 import { emitLog } from '../logbridge/bridge.js';
+import { createScrubber } from '../scrub/scrubber.js';
 import type { Scrubber } from '../types/index.js';
 
 const EXCLUDED_ENDPOINTS = [
@@ -27,7 +28,14 @@ const EXCLUDED_ENDPOINTS = [
 @Catch()
 @Injectable()
 export class HttpExceptionFilter implements ExceptionFilter {
-  constructor(private readonly scrubber: Scrubber) {}
+  private readonly scrubber: Scrubber;
+
+  constructor(scrubber?: Scrubber) {
+    // Defensive: never let an undefined scrubber turn the error handler itself
+    // into a crash on every failing request (failure mode #4). Fall back to a
+    // real redactor.
+    this.scrubber = scrubber ?? createScrubber();
+  }
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
@@ -38,10 +46,6 @@ export class HttpExceptionFilter implements ExceptionFilter {
       response.status(HttpStatus.NOT_FOUND).send();
       return;
     }
-
-    const sanitizedHeaders = this.scrubber.scrubAttrs(
-      request.headers as Record<string, unknown>,
-    );
 
     const status =
       exception instanceof HttpException
@@ -58,26 +62,41 @@ export class HttpExceptionFilter implements ExceptionFilter {
         ? exception.getResponse()
         : message;
 
-    emitLog('error', {
-      operation: 'exception',
-      headers: JSON.stringify(sanitizedHeaders),
-      statusCode: status,
-      url: request.url,
-      msg: message,
-      body: typeof bodyResponse === 'object'
-        ? JSON.stringify(bodyResponse)
-        : String(bodyResponse),
-      ...(exception instanceof Error ? { stack: exception.stack } : {}),
-    });
+    // Telemetry is best-effort. A scrub / emit / span failure must NEVER suppress
+    // the error response or crash the request path (resilience contract:
+    // fail-open). status/message/bodyResponse are computed above, outside this
+    // block, because the response MUST be sent regardless of telemetry outcome.
+    try {
+      const sanitizedHeaders = this.scrubber.scrubAttrs(
+        request.headers as Record<string, unknown>,
+      );
 
-    const span = trace.getSpan(context.active());
-    if (span) {
-      span.setStatus({ code: SpanStatusCode.ERROR, message });
-      span.setAttribute('http.status_code', status);
-      span.setAttribute('error.message', message);
-      if (exception instanceof Error && exception.stack) {
-        span.setAttribute('error.stack', exception.stack);
+      emitLog('error', {
+        operation: 'exception',
+        headers: JSON.stringify(sanitizedHeaders),
+        statusCode: status,
+        url: request.url,
+        msg: message,
+        body: typeof bodyResponse === 'object'
+          ? JSON.stringify(bodyResponse)
+          : String(bodyResponse),
+        ...(exception instanceof Error ? { stack: exception.stack } : {}),
+      });
+
+      const span = trace.getSpan(context.active());
+      if (span) {
+        span.setStatus({ code: SpanStatusCode.ERROR, message });
+        span.setAttribute('http.status_code', status);
+        span.setAttribute('error.message', message);
+        if (exception instanceof Error && exception.stack) {
+          span.setAttribute('error.stack', exception.stack);
+        }
       }
+    } catch (err) {
+      diag.warn(
+        '[resilient-otel] HttpExceptionFilter telemetry failed (fail-open):',
+        err as Error,
+      );
     }
 
     response.status(status).json(bodyResponse);

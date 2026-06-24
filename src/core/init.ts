@@ -33,11 +33,6 @@ import { registerGracefulShutdown } from './graceful-shutdown.js';
 import { buildDefaultInstrumentations } from './instrumentations.js';
 import type { ResilientOtelConfig, ShutdownHandle, Scrubber } from '../types/index.js';
 
-/** No-op handle returned when observability is disabled. */
-const NOOP_HANDLE: ShutdownHandle = {
-  shutdown: () => Promise.resolve(),
-};
-
 /**
  * Map diagLogLevel config string to the SDK DiagLogLevel enum.
  */
@@ -79,8 +74,11 @@ function resolveScrubber(
  *   - neither config.scrubber nor config.scrubberConfig is provided, OR
  *   - config.scrubber is the noopScrubber sentinel.
  *
- * Master switch: returns NOOP_HANDLE when config.enabled === false (default true).
- * Kill-switch: returns NOOP_HANDLE when the standard OTEL_SDK_DISABLED=true.
+ * Master switch: no-op shutdown when config.enabled === false (default true).
+ * Kill-switch: no-op shutdown when the standard OTEL_SDK_DISABLED=true.
+ * In both disabled paths the returned handle still carries a VALID scrubber, so
+ * a consumer wiring `forWiring({ scrubber: handle.scrubber })` never receives
+ * `undefined` (resilience contract — see init.ts disabled branch).
  *
  * Uses SDK 2.x APIs (Research C2):
  *   - resourceFromAttributes() — no schemaUrl → empty-schema wins merge (R1)
@@ -90,9 +88,18 @@ function resolveScrubber(
 export async function init(config: ResilientOtelConfig): Promise<ShutdownHandle> {
   const env = readOtelEnv();
 
-  // Master switch (code config, default on) or standard OTEL_SDK_DISABLED kill-switch
+  // Master switch (code config, default on) or standard OTEL_SDK_DISABLED kill-switch.
+  // No SDK is started, but we still expose a VALID scrubber on the returned handle
+  // so a consumer wiring `forWiring({ scrubber: handle.scrubber })` never receives
+  // `undefined` and crashes every request (failure mode #2 of the resilience
+  // contract). Use the operator's scrubber when it is a real one; otherwise build
+  // a default — never the noop sentinel, which performs no redaction.
   if (config.enabled === false || env.sdkDisabled) {
-    return NOOP_HANDLE;
+    const scrubber =
+      config.scrubber && !isNoopScrubber(config.scrubber)
+        ? config.scrubber
+        : createScrubber(config.scrubberConfig);
+    return { shutdown: () => Promise.resolve(), scrubber };
   }
 
   // Optional: wire the OTel diag logger before any SDK construction.

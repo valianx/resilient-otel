@@ -148,10 +148,14 @@ export class ObservabilityModule {
     };
   }
 
-  static forWiring(options: { scrubber: Scrubber }): DynamicModule {
+  static forWiring(options: { scrubber?: Scrubber }): DynamicModule {
+    // Defense in depth: never wire an undefined scrubber into the middleware/
+    // filter (failure mode #2). A consumer may pass `handle.scrubber` from an
+    // older/disabled init() where it was undefined — fall back to a real
+    // redactor so `this.scrubber.scrubAttrs(...)` can never be a TypeError.
     return {
       module: ObservabilityModule,
-      providers: wiringProviders(options.scrubber),
+      providers: wiringProviders(options.scrubber ?? createScrubber()),
       exports: [...WIRING_EXPORTS],
     };
   }

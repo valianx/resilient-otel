@@ -10,7 +10,8 @@
  */
 import { describe, it, expect, afterEach } from './helpers/test-kit';
 import { init } from '../src/core/init';
-import { createScrubber, noopScrubber } from '../src/scrub/scrubber';
+import { createScrubber, noopScrubber, isNoopScrubber } from '../src/scrub/scrubber';
+import type { Scrubber } from '../src/types/index';
 
 // Store original signal listeners so we can restore after each test
 const sigTermListeners: NodeJS.SignalsListener[] = [];
@@ -67,11 +68,25 @@ describe('init — scrubberConfig builds and exposes scrubber on handle', () => 
     ).rejects.toThrow(/noopScrubber is not a valid scrubber/i);
   });
 
-  it('returns handle without scrubber when enabled:false', async () => {
+  it('exposes a real scrubber on the handle when enabled:false (fail-open wiring, issue #4)', async () => {
+    // The explicit scrubber is the noop sentinel, so init() must NOT expose it —
+    // it builds a real redactor instead, so forWiring({ scrubber: handle.scrubber })
+    // never receives undefined nor a no-op redactor.
     const handle = await init({ enabled: false, scrubber: noopScrubber });
-    expect(handle).toBeDefined();
-    // NOOP handle does not have scrubber
-    expect((handle as { scrubber?: unknown }).scrubber).toBeUndefined();
+    const scrubber = (handle as { scrubber?: Scrubber }).scrubber;
+    expect(scrubber).toBeDefined();
+    expect(typeof scrubber?.scrubAttrs).toBe('function');
+    expect(isNoopScrubber(scrubber as Scrubber)).toBe(false);
+    await handle.shutdown();
+  });
+
+  it('exposes a usable scrubber on the handle when OTEL_SDK_DISABLED=true (issue #4)', async () => {
+    process.env['OTEL_SDK_DISABLED'] = 'true';
+    const handle = await init({ scrubberConfig: { mode: 'moderate' } });
+    const scrubber = (handle as { scrubber?: Scrubber }).scrubber;
+    expect(scrubber).toBeDefined();
+    expect(typeof scrubber?.scrubAttrs).toBe('function');
+    await handle.shutdown();
   });
 });
 

@@ -1,8 +1,9 @@
 import { Injectable, NestMiddleware } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
-import { trace, context } from '@opentelemetry/api';
+import { trace, context, diag, type Span } from '@opentelemetry/api';
 import { normalizeRoute } from '../utils/route.js';
 import { emitLog } from '../logbridge/bridge.js';
+import { createScrubber } from '../scrub/scrubber.js';
 import type { Scrubber } from '../types/index.js';
 
 const EXCLUDED_ENDPOINTS = [
@@ -42,7 +43,14 @@ function safeJson(value: unknown): string {
  */
 @Injectable()
 export class LoggingMiddleware implements NestMiddleware {
-  constructor(private readonly scrubber: Scrubber) {}
+  private readonly scrubber: Scrubber;
+
+  constructor(scrubber?: Scrubber) {
+    // Defensive: a consumer may wire an undefined scrubber (e.g. `handle.scrubber`
+    // from an older/disabled init() that did not expose one). Never let that
+    // crash the request path — fall back to a real redactor (failure mode #2).
+    this.scrubber = scrubber ?? createScrubber();
+  }
 
   /** Scrub object-shaped values; pass primitives through unchanged. */
   private scrub(value: unknown): unknown {
@@ -61,63 +69,82 @@ export class LoggingMiddleware implements NestMiddleware {
       return;
     }
 
-    // Rename the parent span (from HTTP instrumentation) to the route pattern
-    // so APM groups transactions by route (e.g. "POST /bank-accounts").
-    const route = normalizeRoute(originalUrl);
-    const parentSpan = trace.getSpan(context.active());
-    if (parentSpan) {
-      parentSpan.updateName(`${method} ${route}`);
-      parentSpan.setAttribute('http.route', route);
-    }
-
-    const tracer = trace.getTracer(TRACER_NAME);
-    const span = tracer.startSpan(`HTTP Request: ${method} ${originalUrl}`, {
-      attributes: {
-        'http.method': method,
-        'http.url': originalUrl,
-      },
-    });
-
-    emitLog('info', {
-      operation: 'request',
-      msg: `Incoming request: ${method} ${originalUrl}`,
-      method,
-      url: originalUrl,
-      headers: safeJson(this.scrub(reqHeaders)),
-      body: safeJson(this.scrub(reqBody)),
-    });
-
-    const originalSend = res.send.bind(res);
+    // Everything below is best-effort telemetry. A scrub / emit / span failure
+    // must NEVER propagate into the request path — at most we drop a log line
+    // (resilience contract: fail-open). `next()` is always reached exactly once,
+    // and is intentionally OUTSIDE this try/catch so downstream errors propagate
+    // to Nest/Express as usual.
+    let span: Span | undefined;
     let responseBody: unknown;
 
-    res.send = (body: unknown) => {
-      const contentType = res.getHeader('content-type')?.toString() ?? '';
-      if (
-        contentType.includes('application/json') &&
-        typeof body === 'string'
-      ) {
-        try {
-          responseBody = JSON.parse(body);
-        } catch {
+    try {
+      // Rename the parent span (from HTTP instrumentation) to the route pattern
+      // so APM groups transactions by route (e.g. "POST /bank-accounts").
+      const route = normalizeRoute(originalUrl);
+      const parentSpan = trace.getSpan(context.active());
+      if (parentSpan) {
+        parentSpan.updateName(`${method} ${route}`);
+        parentSpan.setAttribute('http.route', route);
+      }
+
+      const tracer = trace.getTracer(TRACER_NAME);
+      span = tracer.startSpan(`HTTP Request: ${method} ${originalUrl}`, {
+        attributes: {
+          'http.method': method,
+          'http.url': originalUrl,
+        },
+      });
+
+      emitLog('info', {
+        operation: 'request',
+        msg: `Incoming request: ${method} ${originalUrl}`,
+        method,
+        url: originalUrl,
+        headers: safeJson(this.scrub(reqHeaders)),
+        body: safeJson(this.scrub(reqBody)),
+      });
+
+      const originalSend = res.send.bind(res);
+      res.send = (body: unknown) => {
+        const contentType = res.getHeader('content-type')?.toString() ?? '';
+        if (
+          contentType.includes('application/json') &&
+          typeof body === 'string'
+        ) {
+          try {
+            responseBody = JSON.parse(body);
+          } catch {
+            responseBody = body;
+          }
+        } else {
           responseBody = body;
         }
-      } else {
-        responseBody = body;
-      }
-      return (originalSend as (body: unknown) => Response)(body);
-    };
+        return (originalSend as (body: unknown) => Response)(body);
+      };
+    } catch (err) {
+      diag.warn(
+        '[resilient-otel] LoggingMiddleware setup failed (fail-open):',
+        err as Error,
+      );
+    }
 
-    context.with(trace.setSpan(context.active(), span), () => {
-      res.on('finish', () => {
+    // The 'finish' listener fires asynchronously, OUTSIDE any try/catch scope, so
+    // an unguarded throw here would surface as an uncaughtException and could
+    // crash the process (failure mode #3). Guard it internally and always end the
+    // span in `finally`.
+    const onFinish = (): void => {
+      try {
         const duration = Date.now() - start;
         const responseSize =
           res.getHeader('content-length')?.toString() ?? 'unknown';
         const { statusCode, statusMessage } = res;
         const isSuccess = statusCode >= 200 && statusCode < 400;
 
-        span.setAttribute('http.status_code', statusCode);
-        if (statusMessage) {
-          span.setAttribute('http.status_message', statusMessage);
+        if (span) {
+          span.setAttribute('http.status_code', statusCode);
+          if (statusMessage) {
+            span.setAttribute('http.status_message', statusMessage);
+          }
         }
 
         // Only log successful responses (errors go through HttpExceptionFilter).
@@ -135,11 +162,31 @@ export class LoggingMiddleware implements NestMiddleware {
             body: safeJson(this.scrub(responseBody)),
           });
         }
+      } catch (err) {
+        diag.warn(
+          '[resilient-otel] LoggingMiddleware response logging failed (fail-open):',
+          err as Error,
+        );
+      } finally {
+        try {
+          span?.end();
+        } catch {
+          /* never throw out of a 'finish' listener */
+        }
+      }
+    };
 
-        span.end();
+    // Activate the per-request span for downstream handlers so their spans are
+    // children of it. When span setup failed, fall through and still serve the
+    // request without an active span.
+    if (span) {
+      context.with(trace.setSpan(context.active(), span), () => {
+        res.on('finish', onFinish);
+        next();
       });
-
+    } else {
+      res.on('finish', onFinish);
       next();
-    });
+    }
   }
 }
