@@ -70,6 +70,24 @@ export interface ResilientOtelConfig {
    */
   consoleExport?: boolean;
   /**
+   * Serialize complex (non-array object) log attribute values to JSON strings
+   * before export. Required for backends that do not index nested objects
+   * (e.g. Elastic Cloud / Elasticsearch, which Zippy's Collector exports to).
+   *
+   * Serializes the named set { body, headers, metadata, error, exception } AND
+   * any other non-array object attribute (catch-all). Scalars, arrays, strings,
+   * and native trace_id/span_id are untouched. signal:'log' stays scalar.
+   *
+   * Serialization runs AFTER the scrubber and ABOVE the OTLP/console fan-out,
+   * so PII redaction is preserved and OTLP + stdout receive the identical
+   * serialized record.
+   *
+   * Default: true (Elastic-safe behavior out of the box).
+   * Env opt-out: OTEL_RESILIENT_SERIALIZE_ATTRS=false (or '0') disables it.
+   * Resolution order: config.serializeComplexAttributes → env → true.
+   */
+  serializeComplexAttributes?: boolean;
+  /**
    * Opt-in: use the library's documented pruned instrumentation allowlist.
    * When true and no explicit `instrumentations` array is provided, init()
    * builds the default set (http, express, nestjs-core, pg, ioredis, undici,

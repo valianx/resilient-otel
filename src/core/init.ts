@@ -28,6 +28,7 @@ import { buildSampler } from './sampling.js';
 import { buildShutdown } from './shutdown.js';
 import { ConsoleLogRecordExporter } from './console-exporter.js';
 import { FanOutLogRecordProcessor } from './fanout-processor.js';
+import { SerializeLogRecordProcessor } from './serialize-processor.js';
 import { registerGracefulShutdown } from './graceful-shutdown.js';
 import { buildDefaultInstrumentations } from './instrumentations.js';
 import type { ResilientOtelConfig, ShutdownHandle, Scrubber } from '../types/index.js';
@@ -149,16 +150,58 @@ export async function init(config: ResilientOtelConfig): Promise<ShutdownHandle>
     config.consoleExport === true ||
     (config.consoleExport == null && env.resilientConsole);
 
+  // Resolve whether complex attribute serialization is enabled.
+  // Default-on (Elastic-safe behavior out of the box): the flag is enabled
+  // unless explicitly set to false in config or via env opt-out.
+  // Resolution order: config.serializeComplexAttributes → env.serializeAttrs → true
+  const serializeEnabled =
+    config.serializeComplexAttributes === false
+      ? false
+      : config.serializeComplexAttributes === true
+        ? true
+        : env.serializeAttrs;
+
+  // SEC-003 contraindication: serialization + disabled scrubber.
+  // When serializeComplexAttributes is on AND the scrubber mode is 'disabled',
+  // nested objects (including PII) are serialized to indexable JSON strings
+  // without any redaction. Warn once at init time so the operator can act.
+  // Note: mode is only introspectable via scrubberConfig; a pre-built scrubber
+  // passed via config.scrubber is opaque — the operator owns its configuration.
+  if (serializeEnabled && config.scrubberConfig?.mode === 'disabled') {
+    diag.warn(
+      "[resilient-otel] serializeComplexAttributes is enabled with scrubber mode 'disabled': " +
+        'nested attributes (including PII) are exported as JSON strings without redaction. ' +
+        "Set serializeComplexAttributes: false or use mode 'moderate'/'strict' to redact PII.",
+    );
+  }
+
   // Build the log processor chain.
-  // When console is enabled: scrub → fanout(batch + console-simple).
-  // When console is disabled (default): scrub → batch (identical to today).
+  //
+  // ORDERING (NON-NEGOTIABLE for security):
+  //   scrub → [serialize] → fanout/batch
+  //
+  // The scrubber MUST run first: it recurses into nested objects and redacts
+  // denylisted keys structurally (e.g. body.password → '[REDACTED]').
+  // If serialization ran before scrub, the scrubber would see an opaque JSON
+  // string and fall back to regex/key=value matching, losing structural
+  // redaction of nested PII. Serialization always runs AFTER scrub.
+  //
+  // Chain variants:
+  //   serialize ON,  console ON:  scrub → serialize → fanout(batch + console-simple)
+  //   serialize ON,  console OFF: scrub → serialize → batch
+  //   serialize OFF, console ON:  scrub → fanout(batch + console-simple)
+  //   serialize OFF, console OFF: scrub → batch
   const batchLogProcessor = new BatchLogRecordProcessor(logExporter);
-  const logDownstream = consoleEnabled
+  const fanoutOrBatch = consoleEnabled
     ? new FanOutLogRecordProcessor([
         batchLogProcessor,
         new SimpleLogRecordProcessor(new ConsoleLogRecordExporter()),
       ])
     : batchLogProcessor;
+
+  const logDownstream = serializeEnabled
+    ? new SerializeLogRecordProcessor(fanoutOrBatch)
+    : fanoutOrBatch;
 
   const scrubLogProcessor = new ScrubLogRecordProcessor(logDownstream, scrubber);
 

@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.3.0] - 2026-06-24
+
+### ⚠ BEHAVIOR CHANGE — default log-attribute output
+
+**`serializeComplexAttributes` defaults to `true` (was implicitly absent in 0.2.0).**
+
+Starting from this release, `init()` serializes complex log attribute values (nested objects) to JSON strings **by default**. This changes the default output of every `emitLog()` / `emitLog(level, { ..., error: errObject })` call:
+
+| Attribute before | Attribute after (default) |
+|-----------------|--------------------------|
+| `error: { code: 500, detail: {...} }` (nested object) | `error: '{"code":500,"detail":{...}}'` (JSON string) |
+| `metadata: { ... }` (nested object) | `metadata: '{"..."}'` (JSON string) |
+| `body: '{"pre":"stringified"}'` (already a string) | unchanged (idempotent) |
+| `signal: 'log'` (scalar) | unchanged |
+
+**Who is affected:** consumers on backends that **do not** require flat attributes (e.g. Grafana Loki, SigNoz, Axiom, or any custom pipeline that expects nested objects). **Elastic Cloud** consumers are unaffected — this is the format Elastic requires.
+
+**Opt out** (restores 0.2.0 behavior exactly):
+```typescript
+await init({ ..., serializeComplexAttributes: false });
+// or:
+// OTEL_RESILIENT_SERIALIZE_ATTRS=false
+```
+
+---
+
+### Added
+
+- **Elastic-safe log attribute serialization (new `serializeComplexAttributes` option, default `true`).** `init()` now serializes complex log attribute values to JSON strings before export. Serializes the named set `{ body, headers, metadata, error, exception }` and any other non-array object attribute (catch-all); scalars, arrays, and already-stringified strings pass through unchanged. `signal: 'log'` and native `trace_id`/`span_id` are unaffected.
+
+  The new `SerializeLogRecordProcessor` is wired strictly **after** `ScrubLogRecordProcessor` and **above** the fan-out, so:
+  - PII redaction (e.g. `body.password → '[REDACTED]'`) is always structural, never lost to an opaque string.
+  - Both the OTLP-batch and the optional stdout exporter receive the identical serialized record.
+  - Unserializable values (circular references, BigInt, throwing getters) are replaced with `'[UNSERIALIZABLE]'` — the pipeline never crashes.
+
+  To disable: set `serializeComplexAttributes: false` in config, or `OTEL_RESILIENT_SERIALIZE_ATTRS=false` as an env var.
+
+  > **Contraindication:** using `mode: 'disabled'` with serialization enabled exports nested PII as fully-indexed JSON strings without redaction. The library emits `diag.warn` at startup when this combination is detected.
+
 ## [0.2.0]
 
 ### Added
@@ -72,9 +113,10 @@ Critical export-path fixes found by an end-to-end test (NestJS app → real Open
 - **Exports never reached the Collector.** The OTLP/HTTP exporter `url` is the complete signal URL and is not auto-suffixed; `endpoint` now appends `/v1/traces|logs|metrics`.
 - **Logs were dropped or unredacted.** The log bridge used a per-bundle module singleton (now the global logs API), and when `OTEL_*` env was set NodeSDK registered its own unscrubbed global logger provider. NodeSDK now owns all three signals with the scrub processors injected; log attributes are redacted via `setAttributes`.
 
-## [Unreleased]
+## [0.1.0]
 
 ### Added
+
 - Initial release: agnostic core (`resilient-otel`) with SDK init, extensible scrubber, taxonomy, metrics, log bridge, propagation, sampling, and AsyncLocalStorage context.
 - Scrub subpath (`resilient-otel/scrub`) with registry-based PII/secrets redactor, default denylist, and secret regex bank.
 - NestJS adapter (`resilient-otel/nestjs`) with interceptors, middlewares, exception filter, module, and Winston transport.
