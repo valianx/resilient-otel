@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-06-24
+
+### Fixed
+
+- **`LoggingMiddleware` and `HttpExceptionFilter` are now fail-open — observability never crashes the request path.** An OpenTelemetry/scrub/emit failure may at most drop a log line; it can no longer fail the consuming application's transaction or crash the process. Discovered while migrating a payments service to `resilient-otel`, where the hard requirement is "observability must never crash the service or affect transactions."
+
+  - **`LoggingMiddleware.use()` is wrapped in `try/catch`.** Span setup, scrubbing, and `emitLog()` ran *before* `next()` with no guard; a throw there propagated into the request and failed the transaction. The telemetry is now best-effort and `next()` is always reached. Downstream errors still propagate normally (the `next()` call is intentionally outside the guard).
+  - **The deferred `res.on('finish')` handler is guarded.** A throw in that listener fired *after* the synchronous scope and risked an `uncaughtException` / process crash; it is now caught and the span is always ended.
+  - **`HttpExceptionFilter.catch()` telemetry is guarded.** The HTTP status/body are computed first and the error response is always sent, even if scrubbing or `emitLog()` throws — the error handler can no longer become a crash on every failing request.
+  - **An `undefined` scrubber can no longer crash every request.** When the SDK is disabled (`config.enabled === false` or the standard `OTEL_SDK_DISABLED=true`), `init()` now exposes a valid scrubber on the returned handle, so `ObservabilityModule.forWiring({ scrubber: handle.scrubber })` never wires `undefined`. As defense in depth, `forWiring()` falls back to `createScrubber()` when no scrubber is supplied, and `LoggingMiddleware`/`HttpExceptionFilter` default to a real redactor when constructed without one.
+
+  No public API changes. The SDK enable/disable behavior is unchanged: the SDK runs by default and is disabled only by `config.enabled === false` or `OTEL_SDK_DISABLED=true`.
+
 ## [0.3.0] - 2026-06-24
 
 ### ⚠ BEHAVIOR CHANGE — default log-attribute output
