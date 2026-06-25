@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { trace, context, SpanStatusCode } from '@opentelemetry/api';
 import { emitLog } from '../logbridge/bridge.js';
+import { Operation, Target } from '../taxonomy/index.js';
 
 type HttpService = {
   axiosRef: {
@@ -59,7 +60,9 @@ export class HttpClientInterceptor {
         // Native correlation: emitLog stamps trace_id/span_id from the active
         // span automatically — no custom attributes needed.
         emitLog('error', {
-          operation: 'http_client_request_error',
+          operation: Operation.Error,
+          // Outbound call: the counterparty is an external service we call.
+          target: Target.External,
           msg: 'Error preparing HTTP request',
           error_message: String((error as { message?: string }).message ?? error),
         });
@@ -95,11 +98,11 @@ export class HttpClientInterceptor {
     // span via native trace_id/span_id (no custom ID attributes).
     context.with(trace.setSpan(context.active(), span), () => {
       emitLog('info', {
-        operation: 'http_client_request',
+        operation: Operation.Request,
+        target: Target.External,
         msg: `Outgoing HTTP request: ${method?.toUpperCase()} ${url}`,
         http_method: method?.toUpperCase(),
         http_url: url,
-        direction: 'outgoing',
       });
     });
     span.end();
@@ -109,13 +112,13 @@ export class HttpClientInterceptor {
     const { status, statusText, config } = response;
     // Native correlation: emitLog stamps trace_id/span_id from the active span.
     emitLog('info', {
-      operation: 'http_client_response',
+      operation: Operation.Response,
+      target: Target.External,
       msg: `HTTP response received: ${status} from ${config.method?.toUpperCase()} ${config.url}`,
       http_method: config.method?.toUpperCase(),
       http_url: config.url,
       status_code: status,
       status_text: statusText,
-      direction: 'incoming',
     });
   }
 
@@ -141,14 +144,14 @@ export class HttpClientInterceptor {
     // Emit inside the span's context for native trace correlation.
     context.with(trace.setSpan(context.active(), span), () => {
       emitLog('error', {
-        operation: 'http_client_error',
+        operation: Operation.Error,
+        target: Target.External,
         msg: `HTTP request failed: ${message}`,
         http_method: config?.method?.toUpperCase(),
         http_url: config?.url,
         status_code: response?.status,
         status_text: response?.statusText,
         error_message: message,
-        direction: 'error',
       });
     });
     span.end();
