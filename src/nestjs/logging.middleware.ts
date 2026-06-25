@@ -4,6 +4,7 @@ import { trace, context, diag, type Span } from '@opentelemetry/api';
 import { normalizeRoute } from '../utils/route.js';
 import { emitLog } from '../logbridge/bridge.js';
 import { createScrubber } from '../scrub/scrubber.js';
+import { Operation, Target } from '../taxonomy/index.js';
 import type { Scrubber } from '../types/index.js';
 
 const EXCLUDED_ENDPOINTS = [
@@ -96,7 +97,9 @@ export class LoggingMiddleware implements NestMiddleware {
       });
 
       emitLog('info', {
-        operation: 'request',
+        operation: Operation.Request,
+        // Inbound traffic: the counterparty is the caller hitting our server.
+        target: Target.Client,
         msg: `Incoming request: ${method} ${originalUrl}`,
         method,
         url: originalUrl,
@@ -150,7 +153,9 @@ export class LoggingMiddleware implements NestMiddleware {
         // Only log successful responses (errors go through HttpExceptionFilter).
         if (isSuccess) {
           emitLog('info', {
-            operation: 'response',
+            operation: Operation.Response,
+            // Paired with the inbound request above — same counterparty role.
+            target: Target.Client,
             msg: `Response for: ${method} ${originalUrl}`,
             method,
             url: originalUrl,

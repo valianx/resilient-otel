@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-25
+
+### ⚠ BEHAVIOR CHANGE — `operation` taxonomy values on auto-emitted logs
+
+The NestJS auto-emitted logs now use the canonical `Operation` taxonomy values, so they group symmetrically with call-site logs built via `taxonomyAttrs(operation, target)`. Two surfaces change their `operation` value, and the non-taxonomy `direction` field is removed:
+
+| Emitter | `operation` before | `operation` after |
+|---|---|---|
+| `HttpClientInterceptor` (outbound request) | `http_client_request` | `request` |
+| `HttpClientInterceptor` (outbound response) | `http_client_response` | `response` |
+| `HttpClientInterceptor` (outbound error) | `http_client_error` / `http_client_request_error` | `error` |
+| `HttpExceptionFilter` (inbound error) | `exception` | `error` |
+
+The `direction` field (`outgoing` / `incoming` / `error`) emitted by `HttpClientInterceptor` is **removed** — `target` now carries that meaning via the taxonomy.
+
+**Who is affected:** any dashboard or APL query that filters on `attributes.operation == 'http_client_*'` or `== 'exception'`, or on `attributes.direction`. Update those to the taxonomy values above (and use `target` to distinguish inbound vs outbound: `client` vs `external`). Adding `target` itself (below) is additive and breaks nothing.
+
+### Added
+
+- **`target` taxonomy axis on every auto-emitted NestJS log (issue #6).** The library's automatic logs now carry both taxonomy axes (`operation` + `target`), matching the two-axis taxonomy that call-site logs already get from `taxonomyAttrs()`. A `request` and its paired `response`/`error` for the same interaction can now be grouped/filtered by `target`, and queries like `where ['attributes.target'] == 'client'` reach the auto access-logs.
+  - `LoggingMiddleware` — inbound `request` / `response` → `target: 'client'`.
+  - `HttpExceptionFilter` — inbound `error` → `target: 'client'`.
+  - `HttpClientInterceptor` — outbound `request` / `response` / `error` → `target: 'external'`.
+
+  Values come from the existing `Operation` / `Target` enums (single source of truth), so they stay consistent with `taxonomyAttrs()`.
+
 ## [0.3.1] - 2026-06-24
 
 ### Fixed

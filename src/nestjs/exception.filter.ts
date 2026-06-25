@@ -10,6 +10,7 @@ import { Request, Response } from 'express';
 import { trace, SpanStatusCode, context, diag } from '@opentelemetry/api';
 import { emitLog } from '../logbridge/bridge.js';
 import { createScrubber } from '../scrub/scrubber.js';
+import { Operation, Target } from '../taxonomy/index.js';
 import type { Scrubber } from '../types/index.js';
 
 const EXCLUDED_ENDPOINTS = [
@@ -72,7 +73,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
       );
 
       emitLog('error', {
-        operation: 'exception',
+        // Inbound error: aligned to the taxonomy Operation.Error / Target.Client
+        // so it groups symmetrically with the request/response access logs.
+        operation: Operation.Error,
+        target: Target.Client,
         headers: JSON.stringify(sanitizedHeaders),
         statusCode: status,
         url: request.url,
